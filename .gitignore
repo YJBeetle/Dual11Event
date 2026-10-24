@@ -1,0 +1,9 @@
+/build/
+/debug/
+/assets/model/ocr/*.onnx
+/assets/model/ocr/keys.txt
+.DS_Store
+__pycache__/
+*.pyc
+/var/
+/config/

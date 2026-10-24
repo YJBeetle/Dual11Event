@@ -1,0 +1,265 @@
+// 淘宝双 11「做任务赚能量」流水线。
+//
+// 坐标一律是识别图像坐标：控制器把截图缩放到短边 720，所以竖屏手机固定是 720 宽。
+// 换机型不用改 roi，只有宽高比差异会挪动右下角的读秒气泡，因此气泡只认文字不认位置。
+//
+// 一条排布规矩：候选链里 DirectHit 节点必须排在所有带识别的节点后面。
+// next 按顺序取第一个命中的，DirectHit 永远命中，排在中间等于把后面的节点全废掉。
+{
+    "Default": {
+        "rate_limit": 1000
+    },
+
+    // 入口分诊：面板 → 活动页入口 → 跨应用返回 → 右上角关闭 → 最后才是边缘返回。
+    // EdgeBack 是 DirectHit，只能垫底，且靠 max_hit 收口，用完就 GiveUp。
+    "EarnEnergy": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "timeout": 15000,
+        "next": ["NeedHuman", "DangerPage", "DismissDialog", "TaskPanel", "OpenTaskPanel", "BackToTaobao", "CloseX", "EdgeBack"],
+        "on_error": ["GiveUp"]
+    },
+
+    "OpenTaskPanel": {
+        "recognition": "OCR",
+        "expected": ["去赚能量"],
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "timeout": 8000,
+        "next": ["TaskPanel"],
+        "on_error": ["EarnEnergy"]
+    },
+
+    // 面板是三态分诊台：先领累计奖励，再判断有没有浏览任务，最后才点任务。
+    "TaskPanel": {
+        "recognition": "OCR",
+        "expected": ["做任务赚能量"],
+        "action": "DoNothing",
+        "pre_wait_freezes": 300,
+        "timeout": 15000,
+        "next": ["ClaimReward", "PanelDrained", "TaskRow"],
+        "on_error": ["EarnEnergy"]
+    },
+
+    "ClaimReward": {
+        "recognition": "OCR",
+        "expected": ["立即领取"],
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "max_hit": 8,
+        "timeout": 5000,
+        "next": ["TaskPanel"],
+        "on_error": ["TaskPanel"]
+    },
+
+    // 面板上再也找不到「浏览N秒」的副标题，说明能自动做的浏览任务清空了。
+    // next 为空即任务正常结束。
+    "PanelDrained": {
+        "recognition": "OCR",
+        "expected": ["浏览\\d+", "点击去逛"],
+        "inverse": true,
+        "action": "DoNothing",
+        "next": []
+    },
+
+    // 面板里混着玩小游戏、邀请好友、花积分兑换这类做不了也不该自动点的任务，
+    // 它们的按钮同样写着「去完成」。所以认的是副标题「浏览N秒」，再用行内偏移点到
+    // 同一行的按钮列：副标题中心相对按钮中心是 (+399, -19)，短边固定 720 所以横向稳定。
+    "TaskRow": {
+        "recognition": "OCR",
+        "expected": ["浏览\\d+[秒s]", "点击去逛"],
+        "roi": [0, 300, 560, 1559],
+        // 固定取第一行会在做不了的行上死循环（点进去没读秒、超时、回来还是它），
+        // 所以随机取一行：做掉的行会从面板消失，剩下的行被反复摊平。
+        "order_by": "Random",
+        "action": "Click",
+        "target_offset": [399, -19, 0, 0],
+        "post_wait_freezes": 500,
+        "post_delay": 2000,
+        "timeout": 20000,
+        "next": ["TaskPage"],
+        "on_error": ["EarnEnergy"]
+    },
+
+    // 落地页。DirectHit 保证每轮都命中，于是这里既是等待循环也是下滑循环。
+    // 「浏览15秒可领」右边带下滑箭头：只有手指一直在下滑时读秒才走，短滑一下停两秒
+    // 是完不成的，所以一轮滑 6 秒、识别一次；抬手间隔只有 rate_limit 的 300ms。
+    "TaskPage": {
+        "recognition": "DirectHit",
+        "action": "Swipe",
+        "begin": [360, 1400],
+        "end": [360, 200],
+        "duration": 6000,
+        "rate_limit": 300,
+        "timeout": 45000,
+        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NextTask", "TaskFinished", "DismissDialog", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
+        "on_error": ["EdgeBack"]
+    },
+
+    // 右下角气泡有两种完成态文案：攻略类页写「任务已完成 / 已得 1000」，
+    // 浏览类页只把「浏览15秒可领+400」换成「已得400」，所以两种都要认。
+    "TaskFinished": {
+        "recognition": "OCR",
+        "expected": ["任务已完成", "已得\\d+"],
+        "action": "DoNothing",
+        "timeout": 5000,
+        "next": ["NextTask", "GoBack"],
+        "on_error": ["EdgeBack"]
+    },
+
+    // 浏览类落地页做完之后气泡会换成「下个任务」，它既是完成信号又是下一条的入口，
+    // 所以直接作为落地页轮询的一等候选：一出现就点，不再多滑。
+    "NextTask": {
+        "recognition": "OCR",
+        "expected": ["下个任务"],
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "post_delay": 1500,
+        "timeout": 8000,
+        "next": ["TaskPage"],
+        "on_error": ["TaskPage"]
+    },
+
+    // 搜一搜任务落在「搜索有福利」的关键词页，必须先挑一个词才会进结果页开始读秒。
+    // 优先点「搜索」按钮本体（^搜索$ 避免认到「搜索宝贝」占位符），
+    // 退一步再点关键词卡片的副标题；卡片词每天变，副标题格式不变。
+    "SearchSuggestion": {
+        "recognition": "OCR",
+        "expected": ["^搜索$", "近一个月", "行业新[趋超]商品", "行业口碑商品"],
+        "roi": [0, 300, 720, 1559],
+        "order_by": "Vertical",
+        "index": 0,
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "post_delay": 2000,
+        "timeout": 5000,
+        "next": ["TaskPage"],
+        "on_error": ["TaskPage"]
+    },
+
+    // 要求输入关键词的搜索页不用打字：「搜索发现」下面就是平台给的推荐词，
+    // 认到标题后按行偏移点第一条。不点「历史搜索」那排，那是账号自己的记录。
+    // 标题框中心 (84, 450)，第一张卡片中心约 (200, 520)。
+    "SearchDiscover": {
+        "recognition": "OCR",
+        "expected": ["搜索发现"],
+        "action": "Click",
+        "target_offset": [116, 70, 0, 0],
+        "post_wait_freezes": 500,
+        "post_delay": 2000,
+        "timeout": 5000,
+        "next": ["TaskPage"],
+        "on_error": ["TaskPage"]
+    },
+
+    // 部分落地页要先在页面里点一下签到/领取，气泡才会开始读秒。
+    "SignIn": {
+        "recognition": "OCR",
+        "expected": ["立即签到", "马上签到", "签到领取"],
+        "action": "Click",
+        "post_wait_freezes": 400,
+        "max_hit": 6,
+        "timeout": 3000,
+        "next": ["TaskPage"],
+        "on_error": ["TaskPage"]
+    },
+
+    // 相机、通知这类系统授权框会盖住一切，先按「不授权」方向关掉再继续。
+    "DismissDialog": {
+        "recognition": "OCR",
+        "expected": ["不允许", "暂不", "以后再说", "稍后再说"],
+        "action": "Click",
+        "post_wait_freezes": 400,
+        "timeout": 3000,
+        "next": ["TaskPanel"],
+        "on_error": ["EarnEnergy"]
+    },
+
+    // 有些落地页没有左上角返回，关闭 X 在右上角。X 是页面自绘的叉，
+    // OCR 会读成 X 或 ×，锁在右上角一条里避免认到正文。
+    "CloseX": {
+        "recognition": "OCR",
+        "expected": ["^[X×]$"],
+        "roi": [500, 40, 720, 420],
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "timeout": 4000,
+        "next": ["TaskPanel"],
+        "on_error": ["EarnEnergy"]
+    },
+
+    // 小游戏之类会整页跳到支付宝，iOS 在屏幕最左上角给了「◀ 淘宝」跨应用返回。
+    // 这个只能认文字：尖角旁边的来源 app 名就是「淘宝」，roi 锁在左上角一条。
+    "BackToTaobao": {
+        "recognition": "OCR",
+        "expected": ["淘宝"],
+        "roi": [0, 40, 220, 140],
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "max_hit": 6,
+        "timeout": 6000,
+        "next": ["EarnEnergy"],
+        "on_error": ["EarnEnergy"]
+    },
+
+    // 滑块、图形验证码是平台在明确拒绝自动化，硬闯既没用也可能伤账号。
+    // 认出来就直接收工退出，把剩下的交给人。
+    // 必须带「验证」二字：搜索历史里就有「mgn7滑块」这种关键词卡片，
+    // 只认「滑块」会把正常页面误判成验证码，整轮直接白退。
+    "NeedHuman": {
+        "recognition": "OCR",
+        "expected": ["滑块验证", "拖动滑块", "安全验证", "请输入验证码"],
+        "action": "DoNothing",
+        "next": []
+    },
+
+    // 订单、支付这类页面绝对不能点页面上的任何东西：浏览任务会逛到商品页，
+    // 兜底的盲点和「领取」类文案一旦落到交易链路上就是真金白银。
+    // 认出这些字样就只做边缘返回，别的节点全部让路。
+    // 不写「购物车」：商品页本来就要逛，误伤会把浏览任务卡死。
+    "DangerPage": {
+        "recognition": "OCR",
+        "expected": ["确认收货", "实付款", "提交订单", "立即支付", "订单信息", "待确认收货"],
+        "action": "DoNothing",
+        "max_hit": 12,
+        "timeout": 4000,
+        "next": ["EdgeBack"],
+        "on_error": ["EarnEnergy"]
+    },
+
+    // 返回按钮是各页面自绘的，位置基本都贴着左上角，所以先按模板找。
+    "GoBack": {
+        "recognition": "TemplateMatch",
+        "template": "BackArrow",
+        "roi": [0, 60, 130, 220],
+        "threshold": 0.8,
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "max_hit": 3,
+        "timeout": 12000,
+        "next": ["TaskPanel"],
+        "on_error": ["EdgeBack"]
+    },
+
+    // 系统级左边缘右滑：H5 自绘箭头、原生导航栏、半屏浮层全都适用，是唯一通用的退出动作。
+    // 实测要点：必须是密集的慢速拖拽（几十个点、约 500ms），两三个点的快速划不会触发手势。
+    "EdgeBack": {
+        "recognition": "DirectHit",
+        "action": "Swipe",
+        "begin": [2, 780],
+        "end": [330, 780],
+        "duration": 500,
+        "post_wait_freezes": 500,
+        "post_delay": 1000,
+        "max_hit": 10,
+        "timeout": 6000,
+        "next": ["EarnEnergy"],
+        "on_error": ["GiveUp"]
+    },
+
+    "GiveUp": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "next": []
+    }
+}
