@@ -1,5 +1,8 @@
 #pragma once
 
+#include <chrono>
+#include <thread>
+
 #include <MaaFramework/MaaAPI.h>
 
 namespace Maa {
@@ -22,7 +25,19 @@ namespace Maa {
         MaaTaskId post_task(const char *entry) const;
         MaaStatus status(MaaTaskId id) const { return MaaTaskerStatus(handle_, id); }
         MaaStatus wait(MaaTaskId id) const { return MaaTaskerWait(handle_, id); }
-        void stop() const { MaaTaskerPostStop(handle_); }
+        // 必须等停止作业真正跑完：只 PostStop 就返回的话，析构会在 worker 线程还在
+        // 读 RuntimeCache 的时候把它拆掉，表现为 mutex lock failed 的 SIGABRT。
+        bool stop_and_wait() const {
+            auto stop_id = MaaTaskerPostStop(handle_);
+            if (stop_id == 0) {
+                return false;
+            }
+            MaaTaskerWait(handle_, stop_id);
+            while (MaaTaskerRunning(handle_)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            return true;
+        }
 
         // 该节点本次运行里是否真的被命中执行过。用来区分「面板清空」和「爬不回活动页」。
         bool hit(const char *node_name) const {

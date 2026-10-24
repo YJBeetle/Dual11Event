@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
         while (status == MaaStatus_Pending || status == MaaStatus_Running) {
             if (std::chrono::steady_clock::now() >= deadline) {
                 LOG_WARNING("main", "Budget of %d s exhausted, stopping the task", options.budget);
-                tasker.stop();
+                tasker.stop_and_wait();
                 timed_out = true;
                 break;
             }
