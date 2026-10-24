@@ -16,7 +16,7 @@
         "recognition": "DirectHit",
         "action": "DoNothing",
         "timeout": 15000,
-        "next": ["NeedHuman", "DangerPage", "DismissDialog", "TaskPanel", "OpenTaskPanel", "BackToTaobao", "CloseX", "EdgeBack"],
+        "next": ["NeedHuman", "NoInstall", "DangerPage", "DismissDialog", "TaskPanel", "OpenTaskPanel", "BackToTaobao", "CloseX", "EdgeBack"],
         "on_error": ["GiveUp"]
     },
 
@@ -77,8 +77,20 @@
         "post_wait_freezes": 500,
         "post_delay": 2000,
         "timeout": 20000,
-        "next": ["TaskPage"],
+        "next": ["TaskPageEnter"],
         "on_error": ["EarnEnergy"]
+    },
+
+    // 进落地页先只看不滑。TaskPage 每轮是先滑 6 秒再识别，而搜索类页面要点的
+    // 「搜索发现」标题就在屏幕中上部，一记全长下滑就把它推出屏幕，节点再也认不到，
+    // 于是变成「没点任何东西却一直在滑」。这里给 8 秒先把入口点了，再交给下滑循环。
+    "TaskPageEnter": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "rate_limit": 800,
+        "timeout": 8000,
+        "next": ["NoInstall", "DangerPage", "SearchSuggestion", "SearchDiscover", "TaskPage"],
+        "on_error": ["TaskPage"]
     },
 
     // 落地页。DirectHit 保证每轮都命中，于是这里既是等待循环也是下滑循环。
@@ -94,7 +106,7 @@
         // 单页最多 30 秒。读秒任务 15 秒就够，超过 30 秒还没认到完成态的
         // （直播间这类没有读秒气泡的页面）就是走错了，立刻边缘返回换下一条。
         "timeout": 30000,
-        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NextTask", "TaskFinished", "DismissDialog", "SearchSuggestion", "SearchDiscover", "SearchSubmit", "SignIn", "CloseX"],
+        "next": ["NeedHuman", "NoInstall", "DangerPage", "TaskPanel", "NextTask", "TaskFinished", "DismissDialog", "SearchSuggestion", "SearchDiscover", "SearchSubmit", "SignIn", "CloseX"],
         "on_error": ["EdgeBack"]
     },
 
@@ -104,9 +116,9 @@
         "recognition": "OCR",
         "expected": ["任务已完成", "已得\\d+"],
         "action": "DoNothing",
-        "timeout": 5000,
-        "next": ["NextTask", "GoBack"],
-        "on_error": ["EdgeBack"]
+        "timeout": 8000,
+        "next": ["NextTask", "GoBack", "CornerBack"],
+        "on_error": ["CornerBack"]
     },
 
     // 浏览类落地页做完之后气泡会换成「下个任务」，它既是完成信号又是下一条的入口，
@@ -123,11 +135,11 @@
     },
 
     // 搜一搜任务落在「搜索有福利」的关键词页，必须先挑一个词才会进结果页开始读秒。
-    // 优先点「搜索」按钮本体（^搜索$ 避免认到「搜索宝贝」占位符），
-    // 退一步再点关键词卡片的副标题；卡片词每天变，副标题格式不变。
+    // 点关键词卡片的副标题；卡片词每天变，副标题格式不变。
+    // 提交由 SearchSubmit 负责，那个按钮在顶栏，不在本节点的 roi 里。
     "SearchSuggestion": {
         "recognition": "OCR",
-        "expected": ["^搜索$", "近一个月", "行业新[趋超]商品", "行业口碑商品"],
+        "expected": ["近一个月", "行业新[趋超]商品", "行业口碑商品"],
         "roi": [0, 300, 720, 1559],
         "order_by": "Vertical",
         "index": 0,
@@ -229,6 +241,19 @@
         "next": []
     },
 
+    // 引导装 App 的页面直接跳过，页面上任何东西都不点（「立即领取」常常就是下载按钮的皮）。
+    // 判定用宿主 App 名和「极速版」这类只有拉新页才会出现的词，不用光秃秃的「下载」，
+    // 免得误伤正常页面。
+    "NoInstall": {
+        "recognition": "OCR",
+        "expected": ["极速版", "快手", "抖音", "下载App", "下载APP", "安装后", "打开App", "打开APP"],
+        "action": "DoNothing",
+        "max_hit": 8,
+        "timeout": 4000,
+        "next": ["CornerBack"],
+        "on_error": ["CornerBack"]
+    },
+
     // 订单、支付这类页面绝对不能点页面上的任何东西：浏览任务会逛到商品页，
     // 兜底的盲点和「领取」类文案一旦落到交易链路上就是真金白银。
     // 认出这些字样就只做边缘返回，别的节点全部让路。
@@ -254,7 +279,7 @@
         "max_hit": 3,
         "timeout": 12000,
         "next": ["TaskPanel"],
-        "on_error": ["EdgeBack"]
+        "on_error": ["CornerBack"]
     },
 
     // 系统级左边缘右滑：H5 自绘箭头、原生导航栏、半屏浮层全都适用，是唯一通用的退出动作。

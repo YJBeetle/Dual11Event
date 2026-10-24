@@ -28,8 +28,22 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 )
 
 if(MAAFW_DIR)
-    set_target_properties(${PROJECT_NAME} PROPERTIES BUILD_RPATH "${MAAFW_DIR}/bin")
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        BUILD_RPATH "${MAAFW_DIR}/bin"
+        INSTALL_RPATH "@executable_path/lib"
+    )
 endif()
+
+# 打包：可执行文件、SDK 的全部动态库、资源，三层装进一个目录，解压即用。
+# 控制单元是 dlopen 的，必须和 libMaaFramework 放在同一个 lib/ 里。
+install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION .)
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/assets/ DESTINATION assets
+    PATTERN "model/ocr" EXCLUDE
+    PATTERN ".DS_Store" EXCLUDE)
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/assets/model/ DESTINATION assets
+    FILES_MATCHING PATTERN "*.onnx" PATTERN "keys.txt")
+install(DIRECTORY ${MAAFW_DIR}/bin/ DESTINATION lib
+    FILES_MATCHING PATTERN "*.dylib" PATTERN "*.so")
 
 # 资源整份拷进构建目录，二进制可以直接从 build/ 起跑
 file(GLOB_RECURSE ASSET_FILES RELATIVE "${PROJECT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/assets/*")

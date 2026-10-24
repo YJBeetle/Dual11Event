@@ -141,6 +141,10 @@ int main(int argc, char **argv) {
             LOG_FATAL("main", "Task did not finish cleanly (status %d)", static_cast<int>(status));
             return 1;
         }
+        if (tasker.hit("GiveUp")) {
+            LOG_WARNING("main", "Could not climb back to the activity page; resume it manually and run again");
+            return 2;
+        }
         LOG_INFO("main", "Task succeeded");
     } catch (const std::exception &e) {
         LOG_FATAL("main", "%s", e.what());
