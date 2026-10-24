@@ -16,7 +16,7 @@
         "recognition": "DirectHit",
         "action": "DoNothing",
         "timeout": 15000,
-        "next": ["NeedHuman", "NoInstall", "DangerPage", "DismissDialog", "TaskPanel", "OpenTaskPanel", "BackToTaobao", "CloseX", "EdgeBack"],
+        "next": ["NeedHuman", "NoInstall", "DangerPage", "DismissDialog", "LeaveDialog", "TaskPanel", "OpenTaskPanel", "BackToTaobao", "CloseX", "CloseCircle", "EdgeBack"],
         "on_error": ["GiveUp"]
     },
 
@@ -89,7 +89,7 @@
         "action": "DoNothing",
         "rate_limit": 800,
         "timeout": 8000,
-        "next": ["NoInstall", "DangerPage", "SearchSuggestion", "SearchDiscover", "TaskPage"],
+        "next": ["NoInstall", "DangerPage", "CloseCircle", "SearchSuggestion", "SearchDiscover", "TaskPage"],
         "on_error": ["TaskPage"]
     },
 
@@ -106,7 +106,7 @@
         // 单页最多 30 秒。读秒任务 15 秒就够，超过 30 秒还没认到完成态的
         // （直播间这类没有读秒气泡的页面）就是走错了，立刻边缘返回换下一条。
         "timeout": 30000,
-        "next": ["NeedHuman", "NoInstall", "DangerPage", "TaskPanel", "NextTask", "TaskFinished", "DismissDialog", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
+        "next": ["NeedHuman", "NoInstall", "DangerPage", "TaskPanel", "NextTask", "TaskFinished", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
         "on_error": ["EdgeBack"]
     },
 
@@ -218,15 +218,43 @@
         "on_error": ["EarnEnergy"]
     },
 
+    // 弹窗的关闭键常常是画面正中一个圆圈 X 图标（芭芭农场那种「玩游戏得现金」），
+    // 不是文字，CloseX 的 OCR 认不到。用模板在全屏找它，认中就点掉。
+    "CloseCircle": {
+        "recognition": "TemplateMatch",
+        "template": "CloseCircle",
+        "threshold": 0.65,
+        "action": "Click",
+        "post_wait_freezes": 400,
+        "timeout": 6000,
+        "next": ["TaskPage"],
+        "on_error": ["TaskPage"]
+    },
+
+    // 离开别人的活动页（淘宝成就的打卡）会弹「真的要离开吗 / 狠心离开 / 继续做任务」。
+    // 一律选离开：留在别人的签到链路里对我们没有任何意义，还会把整轮时间吃掉。
+    "LeaveDialog": {
+        "recognition": "OCR",
+        "expected": ["狠心离开", "忍痛离开", "仍要离开", "残忍离开", "直接离开"],
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "max_hit": 6,
+        "timeout": 4000,
+        "next": ["EarnEnergy"],
+        "on_error": ["EarnEnergy"]
+    },
+
     // 小游戏之类会整页跳到支付宝，iOS 在屏幕最左上角给了「◀ 淘宝」跨应用返回。
     // 这个只能认文字：尖角旁边的来源 app 名就是「淘宝」，roi 锁在左上角一条。
     "BackToTaobao": {
         "recognition": "OCR",
-        "expected": ["淘宝"],
+        // 必须锚定整框：「淘宝成就」「淘宝人生」这类页面标题也在左上角同一条里，
+        // 不锚定就会一直去点标题，跨应用返回永远等不到。
+        "expected": ["^淘宝$"],
         "roi": [0, 40, 220, 140],
         "action": "Click",
         "post_wait_freezes": 500,
-        "max_hit": 6,
+        "max_hit": 3,
         "timeout": 6000,
         "next": ["EarnEnergy"],
         "on_error": ["EarnEnergy"]
@@ -259,10 +287,11 @@
     // 订单、支付这类页面绝对不能点页面上的任何东西：浏览任务会逛到商品页，
     // 兜底的盲点和「领取」类文案一旦落到交易链路上就是真金白银。
     // 认出这些字样就只做边缘返回，别的节点全部让路。
-    // 不写「购物车」：商品页本来就要逛，误伤会把浏览任务卡死。
+    // 每个词都要锚定整框（^...$）：商品页上有「确认收货后自动发放」这类文案，
+    // 不锚定就把正常浏览页全部误杀，实测会一条任务都做不完。也不写「购物车」。
     "DangerPage": {
         "recognition": "OCR",
-        "expected": ["确认收货", "实付款", "提交订单", "立即支付", "订单信息", "待确认收货"],
+        "expected": ["^确认收货$", "^实付款", "^提交订单$", "^立即支付$", "^去支付$", "待确认收货", "^订单信息$", "^订单编号"],
         "action": "DoNothing",
         "max_hit": 12,
         "timeout": 4000,
