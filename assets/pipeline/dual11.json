@@ -106,7 +106,7 @@
         // 单页最多 30 秒。读秒任务 15 秒就够，超过 30 秒还没认到完成态的
         // （直播间这类没有读秒气泡的页面）就是走错了，立刻边缘返回换下一条。
         "timeout": 30000,
-        "next": ["NeedHuman", "NoInstall", "DangerPage", "TaskPanel", "NextTask", "TaskFinished", "DismissDialog", "SearchSuggestion", "SearchDiscover", "SearchSubmit", "SignIn", "CloseX"],
+        "next": ["NeedHuman", "NoInstall", "DangerPage", "TaskPanel", "NextTask", "TaskFinished", "DismissDialog", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
         "on_error": ["EdgeBack"]
     },
 
@@ -145,9 +145,9 @@
         "index": 0,
         "action": "Click",
         "post_wait_freezes": 500,
-        "post_delay": 2000,
+        "post_delay": 1500,
         "timeout": 5000,
-        "next": ["TaskPage"],
+        "next": ["SearchSubmit"],
         "on_error": ["TaskPage"]
     },
 
@@ -168,6 +168,8 @@
 
     // 点推荐词只是把词填进输入框，画面几乎不变；必须再按顶栏的「搜索」才会真的出结果、
     // 才开始读秒。按钮在搜索栏右侧，roi 收到顶部一条，避开正文里的「搜索」字样。
+    // 只能由 SearchSuggestion / SearchDiscover 串过来，绝不能放进 TaskPage 的轮询链：
+    // 结果页顶栏同样有「搜索」，反复提交会把列表滚回顶部，读秒永远攒不满。
     "SearchSubmit": {
         "recognition": "OCR",
         "expected": ["^搜索$"],
