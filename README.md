@@ -54,7 +54,8 @@ Actions 里会连带构建 MaaFramework（默认 `feat/ios-control-unit`，可�
 产出 `Dual11Event-macos-aarch64.zip`：解压后 `./Dual11Event` 直接能跑，动态库都在同目录的 `lib/` 里。
 打 tag（`v*`）时会自动挂到对应 Release。
 
-只有 macOS 包：xdb 的 server 依赖 CoreDevice，Windows 上没有这套 iOS 通道。
+目前只出 macOS 包。这不是 xdb 的限制 —— 它的 iOS 协议是自己实现的，macOS / Linux / Windows
+桌面和 Android 内嵌都能跑 server；只是这条打包链路还没在 Windows 上验证过 preset 和 MaaDeps。
 
 ## 构建
 

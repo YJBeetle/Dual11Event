@@ -37,7 +37,7 @@
         "action": "DoNothing",
         "pre_wait_freezes": 300,
         "timeout": 15000,
-        "next": ["ClaimReward", "PanelDrained", "TaskRow"],
+        "next": ["ClaimReward", "TaskRow", "PanelDrained"],
         "on_error": ["EarnEnergy"]
     },
 
@@ -58,8 +58,27 @@
         "recognition": "OCR",
         "expected": ["浏览\\d+", "点击去逛"],
         "inverse": true,
+        "action": "Swipe",
+        "begin": [360, 1250],
+        "end": [360, 900],
+        "duration": 400,
+        "post_wait_freezes": 400,
+        "timeout": 4000,
+        "next": ["PanelDrained2"],
+        "on_error": ["TaskPanel"]
+    },
+
+    // 面板是可滚动列表，只扫当前屏就说「做完了」是假阳性：
+    // 露出来的可能正好全是邀请好友、小游戏这类不做的行。
+    // 所以第一段判定成立后先把列表往下滚一屏，再判一次，两次都没有才算清空。
+    "PanelDrained2": {
+        "recognition": "OCR",
+        "expected": ["浏览\\d+", "点击去逛"],
+        "inverse": true,
         "action": "DoNothing",
-        "next": []
+        "timeout": 4000,
+        "next": [],
+        "on_error": ["TaskPanel"]
     },
 
     // 面板里混着玩小游戏、邀请好友、花积分兑换这类做不了也不该自动点的任务，

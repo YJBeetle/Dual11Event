@@ -3,8 +3,11 @@ name: build
 on:
   workflow_dispatch:
     inputs:
+      maafw_repo:
+        description: "MaaFramework fork/repo carrying the iOS controller"
+        default: YJBeetle/MaaFramework
       maafw_ref:
-        description: "MaaFramework ref that exposes MaaIOSControllerCreate"
+        description: "branch or tag of that repo"
         default: feat/ios-control-unit
   push:
     branches: [main, master]
@@ -12,9 +15,11 @@ on:
 
 jobs:
   package:
-    # xdb 的 server 依赖 CoreDevice，只有 macOS 能跑 iOS 那套，所以不出 Windows 包。
+    # 先只出 macOS 包：xdb 协议本身是跨平台的（macOS / Linux / Windows 桌面 + Android 内嵌），
+    # 但这条打包链路只在 macOS 上实测过，Windows 的 MaaDeps/preset 还没验证。
     runs-on: macos-15
     env:
+      MAAFW_REPO: ${{ github.event.inputs.maafw_repo || 'YJBeetle/MaaFramework' }}
       MAAFW_REF: ${{ github.event.inputs.maafw_ref || 'feat/ios-control-unit' }}
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +28,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: MaaXYZ/MaaFramework
+          repository: ${{ env.MAAFW_REPO }}
           ref: ${{ env.MAAFW_REF }}
           path: MaaFramework
           submodules: recursive
