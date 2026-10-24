@@ -7,7 +7,7 @@ on:
         description: "MaaFramework ref that exposes MaaIOSControllerCreate"
         default: feat/ios-control-unit
   push:
-    branches: [main]
+    branches: [main, master]
     tags: ["v*"]
 
 jobs:
