@@ -45,12 +45,15 @@
    xdb start-server     # 桌面客户端一般会自动拉起，这一步通常不用手动做
    ```
 
-2. **MaaFramework**：需要带 iOS 控制器的构建（`MaaIOSControllerCreate`），官方 release 暂时没有，
-   请用 `feat/ios-control-unit` 分支源码构建后得到的 install 目录。
+2. **MaaFramework**：需要带 iOS 控制器的构建（`MaaIOSControllerCreate`）。iOS 通道还没正式
+   合进上游，所以目前取 `YJBeetle/MaaFramework` 的 `feat/ios-control-unit` 分支自行构建；
+   合并进上游并出 release 之后，换成官方包即可。
 
 ## 预编译包
 
-Actions 里会连带构建 MaaFramework（默认 `feat/ios-control-unit`，可在手动触发时改 ref），
+Actions 里会连带构建 MaaFramework。默认 `YJBeetle/MaaFramework` 的 `feat/ios-control-unit`
+（iOS 通道还没合上游），合并后把 `maafw_repo` 改回 `MaaXYZ/MaaFramework` 即可，
+两个值都能在手动触发时覆盖。
 产出 `Dual11Event-macos-aarch64.zip`：解压后 `./Dual11Event` 直接能跑，动态库都在同目录的 `lib/` 里。
 打 tag（`v*`）时会自动挂到对应 Release。
 
