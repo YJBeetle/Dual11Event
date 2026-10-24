@@ -142,7 +142,8 @@ int main(int argc, char **argv) {
             return 1;
         }
         if (tasker.hit("GiveUp")) {
-            LOG_WARNING("main", "Could not climb back to the activity page; resume it manually and run again");
+            LOG_WARNING("main", "Stopped early: either a choice that needs you (paint/team picker) or a page "
+                               "the ladder cannot climb out of. Handle it on the phone and run again");
             return 2;
         }
         LOG_INFO("main", "Task succeeded");

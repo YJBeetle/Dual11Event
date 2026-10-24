@@ -16,7 +16,7 @@
         "recognition": "DirectHit",
         "action": "DoNothing",
         "timeout": 15000,
-        "next": ["NeedHuman", "NoInstall", "DangerPage", "DismissDialog", "LeaveDialog", "TaskPanel", "OpenTaskPanel", "BackToTaobao", "CloseX", "CloseCircle", "GoMine", "LaunchTaobao", "EdgeBack"],
+        "next": ["NeedHuman", "Blocked", "NoInstall", "DangerPage", "DismissDialog", "LeaveDialog", "TaskPanel", "OpenTaskPanel", "BackToTaobao", "CloseX", "CloseCircle", "GoMine", "LaunchTaobao", "EdgeBack"],
         "on_error": ["GiveUp"]
     },
 
@@ -332,6 +332,18 @@
         "timeout": 12000,
         "next": ["TaskPanel"],
         "on_error": ["CornerBack"]
+    },
+
+    // 需要用户自己决定的弹窗（选涂装、选队伍、选礼物），既挡住了整条识别链，
+    // 也不该由自动化代劳 —— 这类选择往往不可撤销，或者关闭就等于随机选。
+    // 认出来就带原因退出，别再往下降级去重开应用。
+    "Blocked": {
+        "recognition": "OCR",
+        "expected": ["确认选择", "不可修改", "将随机为", "请选择"],
+        "action": "DoNothing",
+        "timeout": 4000,
+        "next": ["GiveUp"],
+        "on_error": ["GiveUp"]
     },
 
     // 落到淘宝根 tab（关注/推荐/店铺信息流）时，iOS 侧没有 deeplink，但有一条纯 UI 的
