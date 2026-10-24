@@ -16,7 +16,7 @@
         "recognition": "DirectHit",
         "action": "DoNothing",
         "timeout": 15000,
-        "next": ["NeedHuman", "NoInstall", "DangerPage", "DismissDialog", "LeaveDialog", "TaskPanel", "OpenTaskPanel", "BackToTaobao", "CloseX", "CloseCircle", "EdgeBack"],
+        "next": ["NeedHuman", "NoInstall", "DangerPage", "DismissDialog", "LeaveDialog", "TaskPanel", "OpenTaskPanel", "BackToTaobao", "CloseX", "CloseCircle", "GoMine", "LaunchTaobao", "EdgeBack"],
         "on_error": ["GiveUp"]
     },
 
@@ -332,6 +332,52 @@
         "timeout": 12000,
         "next": ["TaskPanel"],
         "on_error": ["CornerBack"]
+    },
+
+    // 落到淘宝根 tab（关注/推荐/店铺信息流）时，iOS 侧没有 deeplink，但有一条纯 UI 的
+    // 回家路：底部「我的淘宝」→ 权益行里的「淘金币」→ 就是双11活动页。
+    // roi 锁在底部右侧那一格 tab，避免认到正文里的「我的淘宝」。
+    "GoMine": {
+        "recognition": "OCR",
+        "expected": ["我的淘宝"],
+        "roi": [560, 1470, 720, 1559],
+        "action": "Click",
+        "post_wait_freezes": 600,
+        "post_delay": 1500,
+        "max_hit": 3,
+        "timeout": 6000,
+        "next": ["GoldEntry"],
+        "on_error": ["EarnEnergy"]
+    },
+
+    // 权益行「红包 / 优惠券 / 淘金币抵 / 天猫积分」里的淘金币入口。
+    // 排在 OpenTaskPanel 之后，活动页能直接认出「去赚能量」时轮不到它。
+    "GoldEntry": {
+        "recognition": "OCR",
+        "expected": ["淘金币抵", "淘金币"],
+        "roi": [0, 850, 720, 1250],
+        "action": "Click",
+        "post_wait_freezes": 800,
+        "post_delay": 2000,
+        "max_hit": 3,
+        "timeout": 8000,
+        "next": ["EarnEnergy"],
+        "on_error": ["EarnEnergy"]
+    },
+
+    // 连「我的淘宝」都找不到（已经不在淘宝里了）就直接把应用拉起来，再接上面两步。
+    // bundle id 是从设备上 app.list 读出来的，不是猜的；iOS 的 start_app 收的就是
+    // bundle id，且不杀已运行实例，语义和 Android 的 monkey -p 对齐。
+    "LaunchTaobao": {
+        "recognition": "DirectHit",
+        "action": "StartApp",
+        "package": "com.taobao.taobao4iphone",
+        "post_wait_freezes": 1000,
+        "post_delay": 3000,
+        "max_hit": 2,
+        "timeout": 6000,
+        "next": ["EarnEnergy"],
+        "on_error": ["EarnEnergy"]
     },
 
     // 系统级左边缘右滑：H5 自绘箭头、原生导航栏、半屏浮层全都适用，是唯一通用的退出动作。
