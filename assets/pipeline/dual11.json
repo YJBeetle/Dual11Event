@@ -125,7 +125,7 @@
         // 单页最多 30 秒。读秒任务 15 秒就够，超过 30 秒还没认到完成态的
         // （直播间这类没有读秒气泡的页面）就是走错了，立刻边缘返回换下一条。
         "timeout": 30000,
-        "next": ["NeedHuman", "NoInstall", "DangerPage", "TaskPanel", "NextTask", "TaskFinished", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
+        "next": ["NeedHuman", "NoInstall", "DangerPage", "TaskPanel", "TaskFinished", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
         "on_error": ["EdgeBack"]
     },
 
@@ -136,12 +136,14 @@
         "expected": ["任务已完成", "已得\\d+"],
         "action": "DoNothing",
         "timeout": 8000,
-        "next": ["NextTask", "GoBack", "CornerBack"],
+        "next": ["GoBack", "CornerBack"],
         "on_error": ["CornerBack"]
     },
 
-    // 浏览类落地页做完之后气泡会换成「下个任务」，它既是完成信号又是下一条的入口，
-    // 所以直接作为落地页轮询的一等候选：一出现就点，不再多滑。
+    // 落地页气泡做完会换成「下个任务」，看着比返回面板再挑一条快，但它把「下一条做
+    // 什么」交回给游戏的顺序 —— 里面就有小游戏和邀请好友，进去之后退出时会冲到淘宝
+    // 首页信息流，而 iOS 控制器没有 deeplink，只能人来收拾。实测两次都是它带进去的，
+    // 所以保留节点但不挂进任何候选链，需要时再显式启用。
     "NextTask": {
         "recognition": "OCR",
         "expected": ["下个任务"],
@@ -348,12 +350,14 @@
         "on_error": ["CornerBack"]
     },
 
-    // 边缘手势不是万能的：淘宝首页信息流（推荐/直播/短剧那排 tab）不响应右滑返回，
-    // 但它左上角有个实打实的 "<"，位置固定。所以手势用完 4 次就改成点这个角。
+    // 左上角箭头的位置各页面不齐：H5 自绘的偏下（约 (45,130)），小程序导航栏的更靠角内
+    // （约 (58,142)）。给一个矩形 target，MaaFW 会在框内随机取点（中心概率高），
+    // 于是每次重试自然换落点，比串第二个节点可靠 —— 串不动是因为链尾的 EarnEnergy
+    // 是 DirectHit，永远先命中，第二个点根本没机会被走到。
     "CornerBack": {
         "recognition": "DirectHit",
         "action": "Click",
-        "target": [45, 125],
+        "target": [30, 108, 60, 55],
         "post_wait_freezes": 500,
         "post_delay": 1000,
         "max_hit": 6,
