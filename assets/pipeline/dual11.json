@@ -211,7 +211,7 @@
         "expected": ["立即签到", "马上签到", "签到领取"],
         "action": "Click",
         "post_wait_freezes": 400,
-        "max_hit": 6,
+        "max_hit": 10,
         "timeout": 3000,
         "next": ["TaskPage"],
         "on_error": ["TaskPage", "GiveUp"]
@@ -236,6 +236,7 @@
         "roi": [500, 40, 720, 420],
         "action": "Click",
         "post_wait_freezes": 500,
+        "max_hit": 12,
         "timeout": 4000,
         "next": ["TaskPanel"],
         "on_error": ["EarnEnergy", "GiveUp"]
@@ -249,6 +250,7 @@
         "threshold": 0.65,
         "action": "Click",
         "post_wait_freezes": 400,
+        "max_hit": 20,
         "timeout": 6000,
         "next": ["TaskPage"],
         "on_error": ["TaskPage", "GiveUp"]
@@ -261,7 +263,7 @@
         "expected": ["狠心离开", "忍痛离开", "仍要离开", "残忍离开", "直接离开"],
         "action": "Click",
         "post_wait_freezes": 500,
-        "max_hit": 6,
+        "max_hit": 10,
         "timeout": 4000,
         "next": ["EarnEnergy"],
         "on_error": ["EarnEnergy", "GiveUp"]
@@ -277,7 +279,7 @@
         "roi": [0, 40, 220, 140],
         "action": "Click",
         "post_wait_freezes": 500,
-        "max_hit": 3,
+        "max_hit": 10,
         "timeout": 6000,
         "next": ["EarnEnergy"],
         "on_error": ["EarnEnergy", "GiveUp"]
@@ -301,7 +303,7 @@
         "recognition": "OCR",
         "expected": ["极速版", "快手", "抖音", "下载App", "下载APP", "安装后", "打开App", "打开APP"],
         "action": "DoNothing",
-        "max_hit": 8,
+        "max_hit": 20,
         "timeout": 4000,
         "next": ["CornerBack"],
         "on_error": ["CornerBack", "GiveUp"]
@@ -316,7 +318,7 @@
         "recognition": "OCR",
         "expected": ["^确认收货$", "^实付款", "^提交订单$", "^立即支付$", "^去支付$", "待确认收货", "^订单信息$", "^订单编号"],
         "action": "DoNothing",
-        "max_hit": 12,
+        "max_hit": 30,
         "timeout": 4000,
         "next": ["EdgeBack"],
         "on_error": ["EarnEnergy", "GiveUp"]
@@ -358,7 +360,7 @@
         "action": "Click",
         "post_wait_freezes": 600,
         "post_delay": 1500,
-        "max_hit": 3,
+        "max_hit": 8,
         "timeout": 6000,
         "next": ["GoldEntry"],
         "on_error": ["EarnEnergy", "GiveUp"]
@@ -373,12 +375,15 @@
         "action": "Click",
         "post_wait_freezes": 800,
         "post_delay": 2000,
-        "max_hit": 3,
+        "max_hit": 8,
         "timeout": 8000,
         "next": ["EarnEnergy"],
         "on_error": ["EarnEnergy", "GiveUp"]
     },
 
+    // 兜底节点的 max_hit 是整轮共享且不可续的：给太小会让后面真正需要退出的页面
+    // 直接掉进 GiveUp（实测 EdgeBack 4 次用尽后整轮被提前判死）。真正的终止保证是
+    // 单页 30 秒超时加 runner 的墙钟预算，这里只要保证不无限点就行。
     // 连「我的淘宝」都找不到（已经不在淘宝里了）就直接把应用拉起来，再接上面两步。
     // bundle id 是从设备上 app.list 读出来的，不是猜的；iOS 的 start_app 收的就是
     // bundle id，且不杀已运行实例，语义和 Android 的 monkey -p 对齐。
@@ -388,7 +393,7 @@
         "package": "com.taobao.taobao4iphone",
         "post_wait_freezes": 1000,
         "post_delay": 3000,
-        "max_hit": 2,
+        "max_hit": 4,
         "timeout": 6000,
         "next": ["EarnEnergy"],
         "on_error": ["EarnEnergy", "GiveUp"]
@@ -404,7 +409,7 @@
         "duration": 500,
         "post_wait_freezes": 500,
         "post_delay": 1000,
-        "max_hit": 4,
+        "max_hit": 20,
         "timeout": 6000,
         "next": ["CornerBack"],
         "on_error": ["CornerBack", "GiveUp"]
@@ -420,7 +425,7 @@
         "target": [30, 108, 60, 55],
         "post_wait_freezes": 500,
         "post_delay": 1000,
-        "max_hit": 6,
+        "max_hit": 24,
         "timeout": 6000,
         "next": ["EarnEnergy"],
         "on_error": ["GiveUp"]
