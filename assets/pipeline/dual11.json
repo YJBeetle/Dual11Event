@@ -1,7 +1,11 @@
 // 淘宝双 11「做任务赚能量」流水线。
 //
 // 坐标一律是识别图像坐标：控制器把截图缩放到短边 720，所以竖屏手机固定是 720 宽。
-// 换机型不用改 roi，只有宽高比差异会挪动右下角的读秒气泡，因此气泡只认文字不认位置。
+// 换机型不用改 roi，只有宽高比差异会挪动读秒气泡，因此气泡只认文字不认位置。
+//
+// roi / target 的四元组是 [x, y, width, height]，不是左上右下：x/y 为负从右下边缘算，
+// 宽或高为 0 表示延伸到那一侧边缘。写成左上右下不会报错，只会被静默裁切，
+// 于是识别范围比预想的大一截 —— 日志里会有一堆 "roi is out of range" 警告。
 //
 // 一条排布规矩：候选链里 DirectHit 节点必须排在所有带识别的节点后面。
 // next 按顺序取第一个命中的，DirectHit 永远命中，排在中间等于把后面的节点全废掉。
@@ -10,13 +14,17 @@
         "rate_limit": 1000
     },
 
-    // 入口分诊：面板 → 活动页入口 → 跨应用返回 → 右上角关闭 → 最后才是边缘返回。
-    // EdgeBack 是 DirectHit，只能垫底，且靠 max_hit 收口，用完就 GiveUp。
+    // 入口分诊：面板 → 活动页入口 → 跨应用返回 → 右上角关闭 → 退出梯子。
+    // 退出梯子三段全是 DirectHit，靠 max_hit 依次耗尽来降级：
+    // 先盲点左上角返回箭头，再试边缘手势，最后才重开应用。
+    // 顺序不能反：LaunchTaobao 排在前面的时候，实测它在 50 秒里空转了 5 次 ——
+    // 淘宝还开着一个 H5 子页时 start_app 只是把应用重新聚焦，画面一动不动，
+    // 而它后面的 EdgeBack 因为是第二个 DirectHit 永远轮不到。
     "EarnEnergy": {
         "recognition": "DirectHit",
         "action": "DoNothing",
         "timeout": 15000,
-        "next": ["NeedHuman", "Blocked", "NoInstall", "DangerPage", "DismissDialog", "LeaveDialog", "TaskPanel", "OpenTaskPanel", "BackToTaobao", "CloseX", "CloseCircle", "GoMine", "LaunchTaobao", "EdgeBack"],
+        "next": ["NeedHuman", "Blocked", "DangerPage", "DismissDialog", "LeaveDialog", "TaskPanel", "NoInstall", "OpenTaskPanel", "BackToTaobao", "CloseX", "CloseCircle", "GoMine", "CornerBack", "EdgeBack", "LaunchTaobao"],
         "on_error": ["GiveUp"]
     },
 
@@ -84,12 +92,15 @@
     // 面板里混着玩小游戏、邀请好友、花积分兑换这类做不了也不该自动点的任务，
     // 它们的按钮同样写着「去完成」。所以认的是副标题「浏览N秒」，再用行内偏移点到
     // 同一行的按钮列：副标题中心相对按钮中心是 (+399, -19)，短边固定 720 所以横向稳定。
+    //
+    // 不做「换一行」的轮转：做完的行会从列表里消失，实测 21 次点入 21 次都换到了新行。
+    // 真遇到做不了的行卡住，收口的是下面的 max_hit。
     "TaskRow": {
         "recognition": "OCR",
         "expected": ["浏览\\d+[秒s]", "点击去逛"],
-        "roi": [0, 300, 560, 1559],
-        // 取当前最上面那条。配合 RotatePanel：每次回到面板都把列表往下推一格，
-        // 于是整轮是系统性扫过列表，而不是随机反复抽到同一条做不了的行。
+        // 面板列表区：从 y=300 往下、左半屏（右半屏是「去完成」按钮列，靠偏移点）。
+        // 顶部那条读秒气泡也写着「浏览15秒」，所以 y 起点必须留在它下面。
+        "roi": [0, 300, 560, 0],
         "order_by": "Vertical",
         "index": 0,
         "action": "Click",
@@ -104,9 +115,9 @@
         "on_error": ["EarnEnergy", "GiveUp"]
     },
 
-    // 进落地页先只看不滑。TaskPage 每轮是先滑 6 秒再识别，而搜索类页面要点的
-    // 「搜索发现」标题就在屏幕中上部，一记全长下滑就把它推出屏幕，节点再也认不到，
-    // 于是变成「没点任何东西却一直在滑」。这里给 8 秒先把入口点了，再交给下滑循环。
+    // 进落地页先只看不滑。TaskPage 一上来就是一记 15 秒全长下滑，而搜索类页面要点的
+    // 「搜索发现」标题就在屏幕中上部，一记下滑就把它推出屏幕，节点再也认不到，
+    // 于是变成「没点任何东西却一直在滑」。这里给 8 秒先把入口点了，再交给下滑轮次。
     "TaskPageEnter": {
         "recognition": "DirectHit",
         "action": "DoNothing",
@@ -116,77 +127,58 @@
         "on_error": ["TaskPage", "GiveUp"]
     },
 
-    // 回到面板后把列表往下推一格，让下一次 TaskRow 看到的是别的行。
-    // 做完的行会从列表里消失，所以推的幅度不用大，够换行就行。
-    "RotatePanel": {
-        "max_hit": 40,
-        "recognition": "DirectHit",
-        "action": "Swipe",
-        "begin": [360, 1250],
-        "end": [360, 980],
-        "duration": 450,
-        "post_wait_freezes": 400,
-        "timeout": 6000,
-        "next": ["TaskPanel"],
-        "on_error": ["TaskPanel", "GiveUp"]
-    },
-
-    // 落地页。DirectHit 保证每轮都命中，于是这里既是等待循环也是下滑循环。
-    // 「浏览15秒可领」右边带下滑箭头：只有手指一直在下滑时读秒才走，短滑一下停两秒
-    // 是完不成的，所以一轮滑 6 秒、识别一次；抬手间隔只有 rate_limit 的 300ms。
+    // 落地页下滑。这里有个协议层的坑要写清楚：一个节点的 timeout 只管「动作做完之后
+    // 反复扫 next 列表等命中」那一段时间，节点自己不会被重复执行。所以「滑 6 秒 +
+    // 等 30 秒」不会变成 5 次下滑，而是 1 次下滑加 30 秒干等 —— 抬手期间读秒不走，
+    // 于是任务永远做不完。实测：一次 6 秒下滑之后 33 秒画面完全静止。
+    //
+    // 要连续滑就得把轮次显式串出来：TaskPage 滑 15 秒 → 扫一遍 next（可领/危险页/
+    // 面板…）→ 没命中就交给 TaskPage2 再滑 15 秒 → 再扫一遍 → 还没有就超时退出。
+    // 15 秒是照着气泡要求的「浏览15秒」给的，一记连续拖拽，不抬手。
     "TaskPage": {
         "recognition": "DirectHit",
         "action": "Swipe",
         "begin": [360, 1400],
         "end": [360, 200],
-        "duration": 6000,
+        "duration": 15000,
         "rate_limit": 300,
-        // 单页最多 30 秒。读秒任务 15 秒就够，超过 30 秒还没认到完成态的
-        // （直播间这类没有读秒气泡的页面）就是走错了，立刻边缘返回换下一条。
-        "timeout": 30000,
-        "next": ["NeedHuman", "NoInstall", "DangerPage", "TaskPanel", "TaskFinished", "ClaimBubble", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
-        "on_error": ["EdgeBack", "GiveUp"]
-    },
-
-    // 右下角气泡有两种完成态文案：攻略类页写「任务已完成 / 已得 1000」，
-    // 浏览类页只把「浏览15秒可领+400」换成「已得400」，所以两种都要认。
-    "TaskFinished": {
-        "recognition": "OCR",
-        "expected": ["任务已完成", "已得\\d+"],
-        "action": "DoNothing",
-        "timeout": 8000,
-        "next": ["GoBack", "CornerBack"],
+        "timeout": 10000,
+        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX", "TaskPage2"],
         "on_error": ["CornerBack", "GiveUp"]
     },
 
-    // 落地页气泡做完会换成「下个任务」，看着比返回面板再挑一条快，但它把「下一条做
-    // 什么」交回给游戏的顺序 —— 里面就有小游戏和邀请好友，进去之后退出时会冲到淘宝
-    // 首页信息流，而 iOS 控制器没有 deeplink，只能人来收拾。实测两次都是它带进去的，
-    // 所以保留节点但不挂进任何候选链，需要时再显式启用。
-    "NextTask": {
-        "recognition": "OCR",
-        "expected": ["下个任务"],
-        "action": "Click",
-        "post_wait_freezes": 500,
-        "post_delay": 1500,
-        "timeout": 8000,
-        "next": ["TaskPage"],
-        "on_error": ["TaskPage", "GiveUp"]
+    // 第二轮下滑。next 里不再挂自己，也不挂第三轮，所以一条任务的下滑时间被结构本身
+    // 限死在 30 秒，不需要 max_hit 参与（max_hit 是整轮共享、不可续的，用它限单页轮次
+    // 会让后面正常的任务一起饿死）。
+    "TaskPage2": {
+        "recognition": "DirectHit",
+        "action": "Swipe",
+        "begin": [360, 1400],
+        "end": [360, 200],
+        "duration": 15000,
+        "rate_limit": 300,
+        "timeout": 10000,
+        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
+        "on_error": ["CornerBack", "GiveUp"]
     },
 
-    // 读秒走完之后气泡不是「任务已完成」也不是「已得N」，而是变成可点的「可领」，
-    // 必须点它奖励才到账 —— 实测日志里「可领」出现几十次而前两种文案一次都没有，
-    // 于是整轮白滑，任务永远不算完成。
-    "ClaimBubble": {
+    // 读秒走完的完成态是「已得400能量」+ 一个对勾，**平台自动到账，不需要点任何东西**。
+    // 实测逐帧：气泡右侧的小方块是剩余秒数（12 → 7 → 1），归零后整条横幅换成
+    // 「已得400能量」，再往后变成「⚡400 | 下单再得⚡2000」。
+    //
+    // 这里踩过两个反向的坑，都记下来免得再犯：
+    // 1) 曾经用「可领」当完成信号。未完成的气泡本身就写着「浏览15秒可领+400」，
+    //    而且 OCR 有时会把它切成「浏览15秒」+「可领+400」两框，所以认「可领」等于
+    //    在读秒刚过半就去点一个不可点的框，点完退出 —— 计数器 1:1，能量一分没进。
+    // 2) 因为 1) 提前退出，读秒从来没走完过，于是「已得N」在日志里一次都没出现过，
+    //    又被当成死节点删掉。两个错误互相掩盖，只有逐帧看画面才发现。
+    "TaskFinished": {
         "recognition": "OCR",
-        "expected": ["可领"],
-        "action": "Click",
-        "post_wait_freezes": 500,
-        "post_delay": 1000,
-        "max_hit": 40,
-        "timeout": 6000,
-        "next": ["GoBack", "TaskPanel", "CornerBack"],
-        "on_error": ["GoBack", "TaskPanel", "CornerBack", "GiveUp"]
+        "expected": ["已得\\d+", "任务已完成"],
+        "action": "DoNothing",
+        "timeout": 8000,
+        "next": ["TaskPanel", "CornerBack"],
+        "on_error": ["CornerBack", "GiveUp"]
     },
 
     // 搜一搜任务落在「搜索有福利」的关键词页，必须先挑一个词才会进结果页开始读秒。
@@ -195,7 +187,7 @@
     "SearchSuggestion": {
         "recognition": "OCR",
         "expected": ["近一个月", "行业新[趋超]商品", "行业口碑商品"],
-        "roi": [0, 300, 720, 1559],
+        "roi": [0, 300, 0, 0],
         "order_by": "Vertical",
         "index": 0,
         "action": "Click",
@@ -230,7 +222,7 @@
         // 不锚定：OCR 偶尔把按钮读成「搜索 」或带半个字符，^搜索$ 会整帧错过。
         // roi 已经锁死右上角那一条，左边输入框里的「搜索宝贝」占位符进不来。
         "expected": ["搜索"],
-        "roi": [430, 90, 720, 300],
+        "roi": [430, 90, 290, 210],
         "action": "Click",
         "post_wait_freezes": 500,
         "post_delay": 2000,
@@ -267,7 +259,7 @@
     "CloseX": {
         "recognition": "OCR",
         "expected": ["^[X×]$"],
-        "roi": [500, 40, 720, 420],
+        "roi": [500, 40, 220, 380],
         "action": "Click",
         "post_wait_freezes": 500,
         "max_hit": 12,
@@ -310,7 +302,7 @@
         // 必须锚定整框：「淘宝成就」「淘宝人生」这类页面标题也在左上角同一条里，
         // 不锚定就会一直去点标题，跨应用返回永远等不到。
         "expected": ["^淘宝$"],
-        "roi": [0, 40, 220, 140],
+        "roi": [0, 40, 220, 100],
         "action": "Click",
         "post_wait_freezes": 500,
         "max_hit": 10,
@@ -331,11 +323,13 @@
     },
 
     // 引导装 App 的页面直接跳过，页面上任何东西都不点（「立即领取」常常就是下载按钮的皮）。
-    // 判定用宿主 App 名和「极速版」这类只有拉新页才会出现的词，不用光秃秃的「下载」，
-    // 免得误伤正常页面。
+    // 判定只用「极速版 / 下载App / 安装后」这类只有拉新页才会出现的词：不用光秃秃的
+    // 「下载」，也不用「快手」「抖音」这种宿主 App 名 —— 面板里就有一行任务叫
+    // 「去快手打卡领手机」，而 NoInstall 排得比 TaskPanel 靠前，结果每次回到面板都被它
+    // 抢走、把面板当拉新页退掉。所以既收窄关键词，也把它挪到 TaskPanel 之后。
     "NoInstall": {
         "recognition": "OCR",
-        "expected": ["极速版", "快手", "抖音", "下载App", "下载APP", "安装后", "打开App", "打开APP"],
+        "expected": ["极速版", "下载App", "下载APP", "安装后", "打开App", "打开APP"],
         "action": "DoNothing",
         "max_hit": 20,
         "timeout": 4000,
@@ -345,33 +339,20 @@
 
     // 订单、支付这类页面绝对不能点页面上的任何东西：浏览任务会逛到商品页，
     // 兜底的盲点和「领取」类文案一旦落到交易链路上就是真金白银。
-    // 认出这些字样就只做边缘返回，别的节点全部让路。
+    // 认出这些字样就只做退出，别的节点全部让路。
     // 每个词都要锚定整框（^...$）：商品页上有「确认收货后自动发放」这类文案，
     // 不锚定就把正常浏览页全部误杀，实测会一条任务都做不完。也不写「购物车」。
     "DangerPage": {
         "recognition": "OCR",
-        // 后半组是「下单返能量」这类页面的顶部横幅：页面本身没有浏览读秒，
-        // 唯一能拿能量的动作就是花钱下单，所以认到就直接走退出，不白等 30 秒。
-        "expected": ["^确认收货$", "^实付款", "^提交订单$", "^立即支付$", "^去支付$", "待确认收货", "^订单信息$", "^订单编号", "下单再得", "下单得\\d+"],
+        // 只留页面级的交易文案。「下单再得 / 下单得N」原来也在这里，但它其实是
+        // 浏览任务成功后横幅的下半句（「⚡400 | 下单再得⚡2000」），商品卡上也满是
+        // 「下单得1744淘金币」—— 放在全屏识别里等于把「任务刚做完」判成危险页逃走。
+        "expected": ["^确认收货$", "^实付款", "^提交订单$", "^立即支付$", "^去支付$", "待确认收货", "^订单信息$", "^订单编号"],
         "action": "DoNothing",
         "max_hit": 30,
         "timeout": 4000,
-        "next": ["EdgeBack"],
+        "next": ["CornerBack", "EdgeBack"],
         "on_error": ["EarnEnergy", "GiveUp"]
-    },
-
-    // 返回按钮是各页面自绘的，位置基本都贴着左上角，所以先按模板找。
-    "GoBack": {
-        "recognition": "TemplateMatch",
-        "template": "BackArrow",
-        "roi": [0, 60, 130, 220],
-        "threshold": 0.8,
-        "action": "Click",
-        "post_wait_freezes": 500,
-        "max_hit": 40,
-        "timeout": 12000,
-        "next": ["RotatePanel"],
-        "on_error": ["CornerBack", "GiveUp"]
     },
 
     // 需要用户自己决定的弹窗（选涂装、选队伍、选礼物），既挡住了整条识别链，
@@ -388,11 +369,11 @@
 
     // 落到淘宝根 tab（关注/推荐/店铺信息流）时，iOS 侧没有 deeplink，但有一条纯 UI 的
     // 回家路：底部「我的淘宝」→ 权益行里的「淘金币」→ 就是双11活动页。
-    // roi 锁在底部右侧那一格 tab，避免认到正文里的「我的淘宝」。
+    // roi 锁在底部右侧那一格 tab（贴住下边缘，不认到正文里的「我的淘宝」）。
     "GoMine": {
         "recognition": "OCR",
         "expected": ["我的淘宝"],
-        "roi": [560, 1470, 720, 1559],
+        "roi": [560, -90, 160, 90],
         "action": "Click",
         "post_wait_freezes": 600,
         "post_delay": 1500,
@@ -407,7 +388,7 @@
     "GoldEntry": {
         "recognition": "OCR",
         "expected": ["淘金币抵", "淘金币"],
-        "roi": [0, 850, 720, 1250],
+        "roi": [0, 850, 0, 400],
         "action": "Click",
         "post_wait_freezes": 800,
         "post_delay": 2000,
@@ -417,12 +398,9 @@
         "on_error": ["EarnEnergy", "GiveUp"]
     },
 
-    // 兜底节点的 max_hit 是整轮共享且不可续的：给太小会让后面真正需要退出的页面
-    // 直接掉进 GiveUp（实测 EdgeBack 4 次用尽后整轮被提前判死）。真正的终止保证是
-    // 单页 30 秒超时加 runner 的墙钟预算，这里只要保证不无限点就行。
-    // 连「我的淘宝」都找不到（已经不在淘宝里了）就直接把应用拉起来，再接上面两步。
-    // bundle id 是从设备上 app.list 读出来的，不是猜的；iOS 的 start_app 收的就是
-    // bundle id，且不杀已运行实例，语义和 Android 的 monkey -p 对齐。
+    // 退出梯子的最后一级。bundle id 是从设备上 app.list 读出来的，不是猜的；
+    // iOS 的 start_app 收的就是 bundle id，且不杀已运行实例 —— 所以只有
+    // 「已经不在淘宝里」或「淘宝已经退到后台」时它才有用，页面卡住时它是空转。
     "LaunchTaobao": {
         "recognition": "DirectHit",
         "action": "StartApp",
@@ -430,16 +408,16 @@
         "post_wait_freezes": 1500,
         // 冷启动淘宝要 5~8 秒才出画面，等太短会在白屏上判失败、把次数白白烧完。
         "post_delay": 6000,
-        "max_hit": 6,
+        "max_hit": 3,
         "timeout": 6000,
         "next": ["EarnEnergy"],
         "on_error": ["EarnEnergy", "GiveUp"]
     },
 
-    // 两个退出动作互为重试路径：单次点击失败（随机落点偏了、页面正在转场）不该把
-    // 整轮长跑判死，所以 CornerBack 失败回 EdgeBack、EdgeBack 失败回 CornerBack，
-    // 只有额度用尽才收工。
+    // 两个手势退出动作互为重试路径：单次失败不该把整轮长跑判死。
     // 实测要点：必须是密集的慢速拖拽（几十个点、约 500ms），两三个点的快速划不会触发手势。
+    // 而且并非所有页面都响应边缘手势（淘宝首页信息流、部分 H5 完全不理），
+    // 所以它排在盲点返回箭头后面，只作为第二选择。
     "EdgeBack": {
         "recognition": "DirectHit",
         "action": "Swipe",
@@ -448,23 +426,23 @@
         "duration": 500,
         "post_wait_freezes": 500,
         "post_delay": 1000,
-        "max_hit": 20,
+        "max_hit": 10,
         "timeout": 6000,
-        "next": ["CornerBack"],
-        "on_error": ["CornerBack", "GiveUp"]
+        "next": ["EarnEnergy"],
+        "on_error": ["EarnEnergy", "GiveUp"]
     },
 
-    // 左上角箭头的位置各页面不齐：H5 自绘的偏下（约 (45,130)），小程序导航栏的更靠角内
-    // （约 (58,142)）。给一个矩形 target，MaaFW 会在框内随机取点（中心概率高），
-    // 于是每次重试自然换落点，比串第二个节点可靠 —— 串不动是因为链尾的 EarnEnergy
-    // 是 DirectHit，永远先命中，第二个点根本没机会被走到。
+    // 退出梯子的第一级：盲点左上角的返回箭头。
+    // 箭头位置实测在 (42, 162) 附近（H5 自绘的偏下，小程序导航栏的偏上），
+    // 所以框取 x 20..75 / y 120..195：MaaFW 在框内随机取点且中心权重高。
+    // 之前框取的是 y 108..163，落点全在箭头上方十几像素，点了个空。
     "CornerBack": {
         "recognition": "DirectHit",
         "action": "Click",
-        "target": [30, 108, 60, 55],
+        "target": [20, 120, 55, 75],
         "post_wait_freezes": 500,
         "post_delay": 1000,
-        "max_hit": 40,
+        "max_hit": 25,
         "timeout": 6000,
         "next": ["EarnEnergy"],
         "on_error": ["EdgeBack", "GiveUp"]
