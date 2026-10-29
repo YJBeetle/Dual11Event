@@ -12,6 +12,38 @@ if(MAAFW_DIR)
     list(APPEND CMAKE_PREFIX_PATH "${MAAFW_DIR}/share/cmake")
 endif()
 
+# 源码构建出来的 MaaFramework install 树不携带 OpenCV 的 CMake 配置，它住在 MaaDeps
+# 的 vcpkg 目录里，而 MaaFramework 导出的 config 会 find_dependency(OpenCV)。官方 release
+# 包是自足的，不需要这一段。优先用显式 MAADEPS_DIR，否则在常见相对位置里找带
+# share/opencv*/OpenCVConfig.cmake 的那个。
+set(MAADEPS_DIR "" CACHE PATH "MaaDeps vcpkg installed dir (…/MaaDeps/vcpkg/installed/maa-<arch>-<os>)")
+if(MAAFW_DIR AND NOT MAADEPS_DIR)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        set(maa_os "osx")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        set(maa_os "windows")
+    else()
+        set(maa_os "linux")
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
+        set(maa_arch "arm64")
+    else()
+        set(maa_arch "x64")
+    endif()
+    file(GLOB maadeps_candidates
+        "${MAAFW_DIR}/source/MaaUtils/MaaDeps/vcpkg/installed/maa-${maa_arch}-${maa_os}"
+        "${MAAFW_DIR}/../source/MaaUtils/MaaDeps/vcpkg/installed/maa-${maa_arch}-${maa_os}"
+        "${MAAFW_DIR}/../../source/MaaUtils/MaaDeps/vcpkg/installed/maa-${maa_arch}-${maa_os}"
+        "${MAAFW_DIR}/../../../source/MaaUtils/MaaDeps/vcpkg/installed/maa-${maa_arch}-${maa_os}")
+    if(maadeps_candidates)
+        list(GET maadeps_candidates 0 MAADEPS_DIR)
+    endif()
+endif()
+if(MAADEPS_DIR)
+    list(APPEND CMAKE_PREFIX_PATH "${MAADEPS_DIR}")
+    message(STATUS "Using MaaDeps from: ${MAADEPS_DIR}")
+endif()
+
 # MaaUtils 导出的是静态构建的接口依赖；我们链的是动态包，Boost 已经在库里解析完了，
 # 但 CMake 仍要求这个名字存在，所以给个空的 INTERFACE 目标占位。
 if(NOT TARGET Boost::regex)

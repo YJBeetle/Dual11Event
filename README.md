@@ -47,9 +47,14 @@
    iOS 控制器不直接持有配对凭据，DDI 和设备会话都交给 xdb，所以 server 必须先起来：
 
    ```bash
+   brew install scrctl/tap/xdb
    xdb devices          # 期望看到目标设备处于 connected
    xdb start-server     # 桌面客户端一般会自动拉起，这一步通常不用手动做
    ```
+
+   **版本要对齐**：MaaFramework 的 iOS 单元里链的是它子模块 pin 住的那个 xdb，server 跑太旧的
+   版本会连不上。而且 server 是常驻后台进程，`brew upgrade` 之后它还在用老二进制，
+   需要 `xdb kill-server --port 17423 && xdb start-server --port 17423` 重启一次。
 
 2. **MaaFramework**：需要带 iOS 控制器的构建（`MaaIOSControllerCreate`）。iOS 通道还没正式
    合进上游，所以目前取 `YJBeetle/MaaFramework` 的 `feat/ios-control-unit` 分支自行构建；
@@ -70,11 +75,16 @@ Actions 里会连带构建 MaaFramework。默认 `YJBeetle/MaaFramework` 的 `fe
 
 ```bash
 python3 scripts/fetch-ocr.py          # 拉取 PP-OCR v4 中文模型，带 sha256 校验
-cmake -S . -B build -DMAAFW_DIR=/path/to/MaaFramework/install
+cmake -S . -B build -DMAAFW_DIR=/path/to/MaaFramework/build/install
 cmake --build build
 ```
 
 `MAAFW_DIR` 指向上面那个 install 目录（里面有 `libMaaIOSControlUnit` 和 `share/cmake`）。
+
+源码构建的 MaaFramework 会把 `find_dependency(OpenCV)` 转嫁给消费者，而 OpenCV 的配置在
+MaaDeps 的 vcpkg 目录里、不在 install 树内。CMake 会按宿主平台在 `MAAFW_DIR` 上几级里自动
+找到它（打印 `Using MaaDeps from: …`）；找不到时显式传 `-DMAADEPS_DIR=…/installed/maa-<arch>-<os>`。
+官方 release 包是自足的，不需要这一步。
 
 ## 运行
 
