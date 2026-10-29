@@ -88,9 +88,10 @@
         "recognition": "OCR",
         "expected": ["浏览\\d+[秒s]", "点击去逛"],
         "roi": [0, 300, 560, 1559],
-        // 固定取第一行会在做不了的行上死循环（点进去没读秒、超时、回来还是它），
-        // 所以随机取一行：做掉的行会从面板消失，剩下的行被反复摊平。
-        "order_by": "Random",
+        // 取当前最上面那条。配合 RotatePanel：每次回到面板都把列表往下推一格，
+        // 于是整轮是系统性扫过列表，而不是随机反复抽到同一条做不了的行。
+        "order_by": "Vertical",
+        "index": 0,
         "action": "Click",
         "target_offset": [399, -19, 0, 0],
         "post_wait_freezes": 500,
@@ -115,6 +116,21 @@
         "on_error": ["TaskPage", "GiveUp"]
     },
 
+    // 回到面板后把列表往下推一格，让下一次 TaskRow 看到的是别的行。
+    // 做完的行会从列表里消失，所以推的幅度不用大，够换行就行。
+    "RotatePanel": {
+        "max_hit": 40,
+        "recognition": "DirectHit",
+        "action": "Swipe",
+        "begin": [360, 1250],
+        "end": [360, 980],
+        "duration": 450,
+        "post_wait_freezes": 400,
+        "timeout": 6000,
+        "next": ["TaskPanel"],
+        "on_error": ["TaskPanel", "GiveUp"]
+    },
+
     // 落地页。DirectHit 保证每轮都命中，于是这里既是等待循环也是下滑循环。
     // 「浏览15秒可领」右边带下滑箭头：只有手指一直在下滑时读秒才走，短滑一下停两秒
     // 是完不成的，所以一轮滑 6 秒、识别一次；抬手间隔只有 rate_limit 的 300ms。
@@ -128,7 +144,7 @@
         // 单页最多 30 秒。读秒任务 15 秒就够，超过 30 秒还没认到完成态的
         // （直播间这类没有读秒气泡的页面）就是走错了，立刻边缘返回换下一条。
         "timeout": 30000,
-        "next": ["NeedHuman", "NoInstall", "DangerPage", "TaskPanel", "TaskFinished", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
+        "next": ["NeedHuman", "NoInstall", "DangerPage", "TaskPanel", "TaskFinished", "ClaimBubble", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
         "on_error": ["EdgeBack", "GiveUp"]
     },
 
@@ -156,6 +172,21 @@
         "timeout": 8000,
         "next": ["TaskPage"],
         "on_error": ["TaskPage", "GiveUp"]
+    },
+
+    // 读秒走完之后气泡不是「任务已完成」也不是「已得N」，而是变成可点的「可领」，
+    // 必须点它奖励才到账 —— 实测日志里「可领」出现几十次而前两种文案一次都没有，
+    // 于是整轮白滑，任务永远不算完成。
+    "ClaimBubble": {
+        "recognition": "OCR",
+        "expected": ["可领"],
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "post_delay": 1000,
+        "max_hit": 40,
+        "timeout": 6000,
+        "next": ["GoBack", "TaskPanel"],
+        "on_error": ["GoBack", "TaskPanel", "GiveUp"]
     },
 
     // 搜一搜任务落在「搜索有福利」的关键词页，必须先挑一个词才会进结果页开始读秒。
@@ -337,9 +368,9 @@
         "threshold": 0.8,
         "action": "Click",
         "post_wait_freezes": 500,
-        "max_hit": 3,
+        "max_hit": 40,
         "timeout": 12000,
-        "next": ["TaskPanel"],
+        "next": ["RotatePanel"],
         "on_error": ["CornerBack", "GiveUp"]
     },
 
@@ -431,7 +462,7 @@
         "target": [30, 108, 60, 55],
         "post_wait_freezes": 500,
         "post_delay": 1000,
-        "max_hit": 24,
+        "max_hit": 40,
         "timeout": 6000,
         "next": ["EarnEnergy"],
         "on_error": ["GiveUp"]
