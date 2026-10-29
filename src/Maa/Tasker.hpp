@@ -44,5 +44,15 @@ namespace Maa {
             MaaNodeId latest_id = 0;
             return MaaTaskerGetLatestNode(handle_, node_name, &latest_id) != 0;
         }
+
+        // 节点最近一次执行的 node id。id 单调递增且每次执行换一个，所以「id 变了」
+        // 就等于「这个节点又跑了一次」，可以在外面数次数。
+        MaaNodeId latest(const char *node_name) const {
+            MaaNodeId latest_id = 0;
+            if (MaaTaskerGetLatestNode(handle_, node_name, &latest_id) == 0) {
+                return 0;
+            }
+            return latest_id;
+        }
     };
 }

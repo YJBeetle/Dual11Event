@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <map>
 #include <string>
 #include <thread>
 
@@ -88,6 +89,58 @@ namespace {
         }
         return true;
     }
+
+    // 退出梯子的三段（点左上角、边缘手势、重开应用）全是 DirectHit，永远命中。页面要是
+    // 完全不理返回手势，就会一直 EarnEnergy -> CornerBack -> EarnEnergy 原地转圈。
+    // 流水线的 max_hit 封的是整轮总次数，调大它就等于没有上限；真正想要的上限是
+    // 「连续多少次退出动作没换来任何进展」，MaaFW 里没有这个概念，只能在外面数。
+    // node id 单调递增且每执行一次换一个新的，所以 id 变了就是又跑了一次。
+    // 一层层往外退的嵌套页面本身就要花掉好几轮（一轮 = 一次盲点 + 一次边缘手势），
+    // 所以这个阈值不能贴着「明显卡死」的下限，得留出退 8~10 层的余量。
+    constexpr int kMaxEscapesWithoutProgress = 20;
+    const char *const kProgressNodes[] = {
+        "TaskRow", "TaskFinished", "ClaimReward", "OpenTaskPanel", "PanelDrained2",
+    };
+    const char *const kEscapeNodes[] = {
+        "CornerBack", "EdgeBack", "LaunchTaobao", "GoMine", "GoldEntry",
+        "BackToTaobao", "CloseCircle", "CloseX", "DismissDialog", "LeaveDialog",
+    };
+
+    class ProgressWatch {
+    public:
+        void poll(const Maa::Tasker &tasker) {
+            bool progressed = false;
+            for (const char *name : kProgressNodes) {
+                progressed |= note(tasker, name);
+            }
+            for (const char *name : kEscapeNodes) {
+                if (note(tasker, name)) {
+                    ++escapes_;
+                }
+            }
+            if (progressed) {
+                escapes_at_progress_ = escapes_;
+            }
+        }
+
+        int idle_escapes() const { return escapes_ - escapes_at_progress_; }
+        bool stuck() const { return idle_escapes() >= kMaxEscapesWithoutProgress; }
+
+    private:
+        bool note(const Maa::Tasker &tasker, const char *name) {
+            auto latest = tasker.latest(name);
+            auto &seen = seen_[name];
+            if (latest == 0 || latest == seen) {
+                return false;
+            }
+            seen = latest;
+            return true;
+        }
+
+        std::map<std::string, MaaNodeId> seen_;
+        int escapes_ = 0;
+        int escapes_at_progress_ = 0;
+    };
 }
 
 int main(int argc, char **argv) {
@@ -119,6 +172,7 @@ int main(int argc, char **argv) {
         auto status = tasker.status(task_id);
         auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(options.budget);
         bool timed_out = false;
+        ProgressWatch watch;
         while (status == MaaStatus_Pending || status == MaaStatus_Running) {
             if (std::chrono::steady_clock::now() >= deadline) {
                 LOG_WARNING("main", "Budget of %d s exhausted, stopping the task", options.budget);
@@ -127,6 +181,16 @@ int main(int argc, char **argv) {
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            watch.poll(tasker);
+            if (watch.stuck()) {
+                LOG_WARNING(
+                    "main",
+                    "%d back actions in a row changed nothing — this page ignores the whole escape ladder. "
+                    "Stopping instead of spinning",
+                    watch.idle_escapes());
+                tasker.stop_and_wait();
+                return 2;
+            }
             status = tasker.status(task_id);
         }
         if (!timed_out) {
