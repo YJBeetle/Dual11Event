@@ -185,8 +185,8 @@
         "post_delay": 1000,
         "max_hit": 40,
         "timeout": 6000,
-        "next": ["GoBack", "TaskPanel"],
-        "on_error": ["GoBack", "TaskPanel", "GiveUp"]
+        "next": ["GoBack", "TaskPanel", "CornerBack"],
+        "on_error": ["GoBack", "TaskPanel", "CornerBack", "GiveUp"]
     },
 
     // 搜一搜任务落在「搜索有福利」的关键词页，必须先挑一个词才会进结果页开始读秒。
