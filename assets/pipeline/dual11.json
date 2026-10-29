@@ -426,7 +426,7 @@
         "duration": 500,
         "post_wait_freezes": 500,
         "post_delay": 1000,
-        "max_hit": 10,
+        "max_hit": 40,
         "timeout": 6000,
         "next": ["EarnEnergy"],
         "on_error": ["EarnEnergy", "GiveUp"]
@@ -439,12 +439,15 @@
     "CornerBack": {
         "recognition": "DirectHit",
         "action": "Click",
-        "target": [20, 120, 55, 75],
+        "target": [20, 100, 55, 90],
         "post_wait_freezes": 500,
         "post_delay": 1000,
-        "max_hit": 25,
+        // 它同时是「任务做完后回面板」的正常出口，所以一条任务就要花掉一次额度。
+        // 实测 21 分钟点了 24 行、用了 25 次，额度用尽后 TaskFinished 的 next 全空，
+        // 直接 "invalid node id" 掉进 GiveUp。上限按 TaskRow 额度的三倍给。
+        "max_hit": 120,
         "timeout": 6000,
-        "next": ["EarnEnergy"],
+        "next": ["EdgeBack"],
         "on_error": ["EdgeBack", "GiveUp"]
     },
 
