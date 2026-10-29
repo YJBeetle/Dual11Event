@@ -123,7 +123,7 @@
         "action": "DoNothing",
         "rate_limit": 800,
         "timeout": 8000,
-        "next": ["NoInstall", "DangerPage", "CloseCircle", "SearchSuggestion", "SearchDiscover", "TaskPage"],
+        "next": ["NoInstall", "DangerPage", "CloseCircle", "SearchSuggestion", "SearchDiscover", "OrderBait", "TaskPage"],
         "on_error": ["TaskPage", "GiveUp"]
     },
 
@@ -143,7 +143,7 @@
         "duration": 15000,
         "rate_limit": 300,
         "timeout": 10000,
-        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX", "TaskPage2"],
+        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "OrderBait", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX", "TaskPage2"],
         "on_error": ["CornerBack", "GiveUp"]
     },
 
@@ -158,7 +158,7 @@
         "duration": 15000,
         "rate_limit": 300,
         "timeout": 10000,
-        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
+        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "OrderBait", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
         "on_error": ["CornerBack", "GiveUp"]
     },
 
@@ -229,6 +229,22 @@
         "timeout": 12000,
         "next": ["TaskPage"],
         "on_error": ["TaskPage", "GiveUp"]
+    },
+
+    // 有些行点进去是「下单返能量」：页面本身没有浏览读秒，唯一能拿能量的动作是花钱下单。
+    // 认顶部横幅的「下单再得」开头。锚定是必须的：任务做完的横幅是完整一框
+    // 「已得400丨下单再得2000」，它以「已得」开头，归 TaskFinished 管，不能被这里抢走。
+    //
+    // 放进 TaskPageEnter（进页面先只看不滑那 8 秒）等于一进这种页就走，
+    // 不再白滑两轮 30 秒 —— 实测今天后面剩的行大半是这类，一段里 14 次点入只成了 3 次。
+    "OrderBait": {
+        "recognition": "OCR",
+        "expected": ["^下单再得", "^下单得\\d+"],
+        "action": "DoNothing",
+        "max_hit": 30,
+        "timeout": 4000,
+        "next": ["CornerBack"],
+        "on_error": ["CornerBack", "GiveUp"]
     },
 
     // 部分落地页要先在页面里点一下签到/领取，气泡才会开始读秒。
