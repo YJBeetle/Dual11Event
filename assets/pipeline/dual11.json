@@ -436,7 +436,9 @@
         "on_error": ["EarnEnergy", "GiveUp"]
     },
 
-    // 系统级左边缘右滑：H5 自绘箭头、原生导航栏、半屏浮层全都适用，是唯一通用的退出动作。
+    // 两个退出动作互为重试路径：单次点击失败（随机落点偏了、页面正在转场）不该把
+    // 整轮长跑判死，所以 CornerBack 失败回 EdgeBack、EdgeBack 失败回 CornerBack，
+    // 只有额度用尽才收工。
     // 实测要点：必须是密集的慢速拖拽（几十个点、约 500ms），两三个点的快速划不会触发手势。
     "EdgeBack": {
         "recognition": "DirectHit",
@@ -465,7 +467,7 @@
         "max_hit": 40,
         "timeout": 6000,
         "next": ["EarnEnergy"],
-        "on_error": ["GiveUp"]
+        "on_error": ["EdgeBack", "GiveUp"]
     },
 
     "GiveUp": {
