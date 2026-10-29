@@ -1,7 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include <MaaFramework/MaaAPI.h>
 
@@ -45,14 +48,39 @@ namespace Maa {
             return MaaTaskerGetLatestNode(handle_, node_name, &latest_id) != 0;
         }
 
-        // 节点最近一次执行的 node id。id 单调递增且每次执行换一个，所以「id 变了」
-        // 就等于「这个节点又跑了一次」，可以在外面数次数。
-        MaaNodeId latest(const char *node_name) const {
-            MaaNodeId latest_id = 0;
-            if (MaaTaskerGetLatestNode(handle_, node_name, &latest_id) == 0) {
-                return 0;
+        // 本次任务已经执行过的节点 id 列表。*size 传 0 先问数量，再按数量取数组。
+        // 比按名字逐个问 latest 好：MaaTaskerGetLatestNode 对没命中过的名字会打 ERR 日志，
+        // 而监控是每半秒问一轮十几个名字，日志会被刷屏。
+        std::vector<MaaNodeId> node_ids(MaaTaskId id) const {
+            MaaSize count = 0;
+            if (MaaTaskerGetTaskDetail(handle_, id, nullptr, nullptr, &count, nullptr) == 0 || count == 0) {
+                return {};
             }
-            return latest_id;
+            std::vector<MaaNodeId> ids(count);
+            MaaSize want = count;
+            if (MaaTaskerGetTaskDetail(handle_, id, nullptr, ids.data(), &want, nullptr) == 0) {
+                return {};
+            }
+            ids.resize(std::min<MaaSize>(want, count));
+            return ids;
+        }
+
+        std::string node_name(MaaNodeId node_id) const {
+            auto *buffer = MaaStringBufferCreate();
+            if (!buffer) {
+                return {};
+            }
+            MaaRecoId reco_id = 0;
+            MaaActId action_id = 0;
+            MaaBool completed = false;
+            std::string name;
+            if (MaaTaskerGetNodeDetail(handle_, node_id, buffer, &reco_id, &action_id, &completed) != 0) {
+                if (const char *text = MaaStringBufferGet(buffer)) {
+                    name = text;
+                }
+            }
+            MaaStringBufferDestroy(buffer);
+            return name;
         }
     };
 }

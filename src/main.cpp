@@ -1,7 +1,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
-#include <map>
+#include <set>
 #include <string>
 #include <thread>
 
@@ -98,48 +98,41 @@ namespace {
     // 一层层往外退的嵌套页面本身就要花掉好几轮（一轮 = 一次盲点 + 一次边缘手势），
     // 所以这个阈值不能贴着「明显卡死」的下限，得留出退 8~10 层的余量。
     constexpr int kMaxEscapesWithoutProgress = 20;
-    const char *const kProgressNodes[] = {
+    const std::set<std::string> kProgressNodes = {
         "TaskRow", "TaskFinished", "ClaimReward", "OpenTaskPanel", "PanelDrained2",
     };
-    const char *const kEscapeNodes[] = {
-        "CornerBack", "EdgeBack", "LaunchTaobao", "GoMine", "GoldEntry",
-        "BackToTaobao", "CloseCircle", "CloseX", "DismissDialog", "LeaveDialog",
+    const std::set<std::string> kEscapeNodes = {
+        "CornerBack", "EdgeBack",  "LaunchTaobao", "GoMine",      "GoldEntry",
+        "BackToTaobao", "CloseCircle", "CloseX",   "DismissDialog", "LeaveDialog",
     };
 
+    // 退出梯子的三段（点左上角、边缘手势、重开应用）全是 DirectHit，永远命中。页面要是
+    // 完全不理返回手势，就会一直 EarnEnergy -> CornerBack -> EarnEnergy 原地转圈。
+    // 流水线的 max_hit 封的是整轮总次数，调大它就等于没有上限；真正想要的上限是
+    // 「连续多少次退出动作没换来任何进展」，MaaFW 里没有这个概念，只能在外面数。
     class ProgressWatch {
     public:
-        void poll(const Maa::Tasker &tasker) {
-            bool progressed = false;
-            for (const char *name : kProgressNodes) {
-                progressed |= note(tasker, name);
-            }
-            for (const char *name : kEscapeNodes) {
-                if (note(tasker, name)) {
-                    ++escapes_;
+        void poll(const Maa::Tasker &tasker, MaaTaskId task_id) {
+            auto ids = tasker.node_ids(task_id);
+            for (; cursor_ < ids.size(); ++cursor_) {
+                auto name = tasker.node_name(ids[cursor_]);
+                if (kProgressNodes.count(name)) {
+                    idle_escapes_ = 0;
+                }
+                else if (kEscapeNodes.count(name) && ++idle_escapes_ >= kMaxEscapesWithoutProgress) {
+                    stuck_ = true;
+                    return;
                 }
             }
-            if (progressed) {
-                escapes_at_progress_ = escapes_;
-            }
         }
 
-        int idle_escapes() const { return escapes_ - escapes_at_progress_; }
-        bool stuck() const { return idle_escapes() >= kMaxEscapesWithoutProgress; }
+        bool stuck() const { return stuck_; }
+        int idle_escapes() const { return idle_escapes_; }
 
     private:
-        bool note(const Maa::Tasker &tasker, const char *name) {
-            auto latest = tasker.latest(name);
-            auto &seen = seen_[name];
-            if (latest == 0 || latest == seen) {
-                return false;
-            }
-            seen = latest;
-            return true;
-        }
-
-        std::map<std::string, MaaNodeId> seen_;
-        int escapes_ = 0;
-        int escapes_at_progress_ = 0;
+        size_t cursor_ = 0;
+        int idle_escapes_ = 0;
+        bool stuck_ = false;
     };
 }
 
@@ -181,7 +174,7 @@ int main(int argc, char **argv) {
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            watch.poll(tasker);
+            watch.poll(tasker, task_id);
             if (watch.stuck()) {
                 LOG_WARNING(
                     "main",
