@@ -1,14 +1,24 @@
 #include "./Controller.hpp"
 
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <MaaToolkit/MaaToolkitAPI.h>
 
 #include "../Log.h"
 
 namespace Maa {
-    std::string Controller::discover_udid() {
+    namespace {
+        std::string describe(const MaaToolkitIOSDevice *device) {
+            return std::string(MaaToolkitIOSDeviceGetUdid(device) ? MaaToolkitIOSDeviceGetUdid(device) : "?") + " ["
+                   + (MaaToolkitIOSDeviceGetName(device) ? MaaToolkitIOSDeviceGetName(device) : "?") + ", "
+                   + (MaaToolkitIOSDeviceGetState(device) ? MaaToolkitIOSDeviceGetState(device) : "?") + "]";
+        }
+    }
+
+    std::string Controller::discover_udid(int xdb_port) {
         auto *list = MaaToolkitIOSDeviceListCreate();
         if (list == nullptr) {
             throw std::runtime_error("Failed to create iOS device list");
@@ -18,7 +28,15 @@ namespace Maa {
             ~Owned() { MaaToolkitIOSDeviceListDestroy(value); }
         } owned{list};
 
-        if (!MaaToolkitIOSDeviceFindWithTimeout(5000, list)) {
+        // 端口要一起给发现用：只传给控制器的话，--xdb-port 指到别的 server 上，
+        // 这一步却还在默认端口那台机器上找设备。
+        std::string options = R"({"timeout_ms":5000)";
+        if (xdb_port > 0) {
+            options += R"(,"server_port":)" + std::to_string(xdb_port);
+        }
+        options += "}";
+
+        if (!MaaToolkitIOSDeviceFindWithOptions(MaaIOSConnectionMethod_Auto, options.c_str(), nullptr, nullptr, list)) {
             std::string reason = MaaToolkitIOSDeviceListGetWarnings(list);
             throw std::runtime_error(
                 "No usable iOS device via XDeviceBridge server: " + (reason.empty() ? std::string("unknown") : reason));
@@ -27,18 +45,41 @@ namespace Maa {
         if (size == 0) {
             throw std::runtime_error("No iOS device found. Plug the phone in and trust this computer.");
         }
-        if (size > 1) {
-            throw std::runtime_error("Multiple iOS devices found, pass one with -s <UDID>");
+
+        // 新版发现返回的是 USB/Wi-Fi 快照，记录里有 discovered / paired / connected 三种状态，
+        // 「有条目」不等于「连得上」。所以多台的时候先按 connected 收窄，
+        // 免得一台插着线、另一台只留着配对记录就被判成歧义。
+        std::vector<const MaaToolkitIOSDevice *> candidates;
+        for (MaaSize i = 0; i < size; ++i) {
+            auto *device = MaaToolkitIOSDeviceListAt(list, i);
+            if (device == nullptr) {
+                throw std::runtime_error("iOS device list is inconsistent");
+            }
+            candidates.push_back(device);
         }
-        auto *device = MaaToolkitIOSDeviceListAt(list, 0);
-        if (device == nullptr) {
-            throw std::runtime_error("iOS device list is inconsistent");
+        if (candidates.size() > 1) {
+            std::vector<const MaaToolkitIOSDevice *> online;
+            for (auto *device : candidates) {
+                if (std::string(MaaToolkitIOSDeviceGetState(device)) == "connected") {
+                    online.push_back(device);
+                }
+            }
+            if (online.size() == 1) {
+                candidates = online;
+            }
         }
-        return MaaToolkitIOSDeviceGetUdid(device);
+        if (candidates.size() > 1) {
+            std::string seen;
+            for (auto *device : candidates) {
+                seen += (seen.empty() ? " " : ", ") + describe(device);
+            }
+            throw std::runtime_error("Multiple iOS devices found, pass one with -s <UDID>" + seen);
+        }
+        return MaaToolkitIOSDeviceGetUdid(candidates.front());
     }
 
     Controller::Controller(const std::string &udid, int xdb_port) {
-        std::string serial = udid.empty() ? discover_udid() : udid;
+        std::string serial = udid.empty() ? discover_udid(xdb_port) : udid;
         std::string config = xdb_port > 0 ? R"({"server_port":)" + std::to_string(xdb_port) + "}" : "{}";
 
         LOG_INFO("Controller", "Creating iOS controller for %s", serial.c_str());
@@ -46,7 +87,6 @@ namespace Maa {
             serial.c_str(),
             MaaIOSScreencapMethod_ScreenshotService,
             MaaIOSConnectionMethod_Auto,
-            "",
             config.c_str());
         if (handle_ == nullptr) {
             LOG_ERROR("Controller", "Failed to create iOS controller");

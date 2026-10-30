@@ -9,7 +9,7 @@ namespace Maa {
     private:
         MaaController *handle_ = nullptr;
 
-        static std::string discover_udid();
+        static std::string discover_udid(int xdb_port);
 
     public:
         // udid 为空时自动挑选唯一在线设备。xdb_port 为 0 时用 XDB_PORT 或默认端口。
