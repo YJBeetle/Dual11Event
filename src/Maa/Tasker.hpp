@@ -28,6 +28,14 @@ namespace Maa {
         MaaTaskId post_task(const char *entry) const;
         MaaStatus status(MaaTaskId id) const { return MaaTaskerStatus(handle_, id); }
         MaaStatus wait(MaaTaskId id) const { return MaaTaskerWait(handle_, id); }
+
+        // 设备侧隧道断了（xdb 到手机的 screencapture / input 连接被回收）时框架不会自己
+        // 重连，而流水线会一直对着死会话发输入 —— 实测一段刷了 1372 条 touch_move 失败、
+        // 白烧十几分钟。控制器句柄从 tasker 取，别用自己的：绑定之后所有权在 tasker 那边。
+        bool controller_connected() const {
+            auto *controller = MaaTaskerGetController(handle_);
+            return controller != nullptr && MaaControllerConnected(controller) != 0;
+        }
         // 必须等停止作业真正跑完：只 PostStop 就返回的话，析构会在 worker 线程还在
         // 读 RuntimeCache 的时候把它拆掉，表现为 mutex lock failed 的 SIGABRT。
         bool stop_and_wait() const {

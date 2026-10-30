@@ -22,6 +22,7 @@ namespace {
             << "  --assets DIR         resource directory (default: ./assets)\n"
             << "  --entry NAME         pipeline entry node (default: EarnEnergy)\n"
             << "  --budget SECONDS     hard stop for one run (default: 3600)\n"
+            << "  exit codes           0 drained, 1 budget/failed, 2 needs you, 3 device dropped\n"
             << "  -h, --help           show this help\n";
     }
 
@@ -174,6 +175,14 @@ int main(int argc, char **argv) {
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            if (!tasker.controller_connected()) {
+                LOG_FATAL(
+                    "main",
+                    "The device session dropped (xdb lost the tunnel to the phone). "
+                    "Nothing is going to work until the phone is reachable again, so stopping");
+                tasker.stop_and_wait();
+                return 3;
+            }
             watch.poll(tasker, task_id);
             if (watch.stuck()) {
                 LOG_WARNING(
