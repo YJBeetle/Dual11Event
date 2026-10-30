@@ -158,45 +158,70 @@ int main(int argc, char **argv) {
         resource.load(options.assets);
 
         Maa::Tasker tasker(controller, resource);
-        auto task_id = tasker.post_task(options.entry.c_str());
-        if (task_id == 0) {
-            throw std::runtime_error("Failed to post task " + options.entry);
-        }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(options.budget);
 
-        auto status = tasker.status(task_id);
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(options.budget);
+        // 取图连着失败几帧，框架就把整个任务判死：实测一次 12 秒的
+        // 「com.apple.coredevice.screencaptureservice HTTP/2 handshake failed: Timed out」
+        // 直接让跑了 7 分钟的那一轮以 status 4000 收场。这种抖动是设备侧的，流水线里
+        // 治不了，但外面这一层可以 —— 重新 post 入口节点接着跑，墙钟预算才是唯一的总闸。
+        constexpr int kMaxTaskAttempts = 10;
         bool timed_out = false;
-        ProgressWatch watch;
-        while (status == MaaStatus_Pending || status == MaaStatus_Running) {
-            if (std::chrono::steady_clock::now() >= deadline) {
-                LOG_WARNING("main", "Budget of %d s exhausted, stopping the task", options.budget);
-                tasker.stop_and_wait();
-                timed_out = true;
+        MaaStatus status = MaaStatus_Pending;
+        for (int attempts = 1;; ++attempts) {
+            ProgressWatch watch;
+            auto task_id = tasker.post_task(options.entry.c_str());
+            if (task_id == 0) {
+                throw std::runtime_error("Failed to post task " + options.entry);
+            }
+
+            status = tasker.status(task_id);
+            while (status == MaaStatus_Pending || status == MaaStatus_Running) {
+                if (std::chrono::steady_clock::now() >= deadline) {
+                    LOG_WARNING("main", "Budget of %d s exhausted, stopping the task", options.budget);
+                    tasker.stop_and_wait();
+                    timed_out = true;
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                if (!tasker.controller_connected()) {
+                    LOG_FATAL(
+                        "main",
+                        "The device session dropped (xdb lost the tunnel to the phone). "
+                        "Nothing is going to work until the phone is reachable again, so stopping");
+                    tasker.stop_and_wait();
+                    return 3;
+                }
+                watch.poll(tasker, task_id);
+                if (watch.stuck()) {
+                    LOG_WARNING(
+                        "main",
+                        "%d back actions in a row changed nothing — this page ignores the whole escape ladder. "
+                        "Stopping instead of spinning",
+                        watch.idle_escapes());
+                    tasker.stop_and_wait();
+                    return 2;
+                }
+                status = tasker.status(task_id);
+            }
+            if (timed_out) {
                 break;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            if (!tasker.controller_connected()) {
-                LOG_FATAL(
-                    "main",
-                    "The device session dropped (xdb lost the tunnel to the phone). "
-                    "Nothing is going to work until the phone is reachable again, so stopping");
-                tasker.stop_and_wait();
-                return 3;
-            }
-            watch.poll(tasker, task_id);
-            if (watch.stuck()) {
-                LOG_WARNING(
-                    "main",
-                    "%d back actions in a row changed nothing — this page ignores the whole escape ladder. "
-                    "Stopping instead of spinning",
-                    watch.idle_escapes());
-                tasker.stop_and_wait();
-                return 2;
-            }
-            status = tasker.status(task_id);
-        }
-        if (!timed_out) {
+
             status = tasker.wait(task_id);
+            if (status == MaaStatus_Succeeded) {
+                break;
+            }
+            if (attempts >= kMaxTaskAttempts) {
+                LOG_WARNING("main", "Still failing after %d attempts, giving up", attempts);
+                break;
+            }
+            LOG_WARNING(
+                "main",
+                "Attempt %d ended with status %d (a capture hiccup aborts the whole task) — re-posting %s",
+                attempts,
+                static_cast<int>(status),
+                options.entry.c_str());
+            std::this_thread::sleep_for(std::chrono::seconds(5));
         }
 
         if (timed_out) {

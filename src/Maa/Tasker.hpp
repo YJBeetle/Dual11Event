@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <memory>
 #include <chrono>
 #include <string>
 #include <thread>
@@ -59,14 +60,22 @@ namespace Maa {
         // 本次任务已经执行过的节点 id 列表。*size 传 0 先问数量，再按数量取数组。
         // 比按名字逐个问 latest 好：MaaTaskerGetLatestNode 对没命中过的名字会打 ERR 日志，
         // 而监控是每半秒问一轮十几个名字，日志会被刷屏。
+        // entry / status 也必须给真地址 —— 这两个出参走 CheckNullAndWarn，传 nullptr
+        // 每次调用要刷两条 WRN，等于把刷屏换了个 API 继续刷。
         std::vector<MaaNodeId> node_ids(MaaTaskId id) const {
+            auto *entry = MaaStringBufferCreate();
+            if (!entry) {
+                return {};
+            }
+            const std::unique_ptr<MaaStringBuffer, void (*)(MaaStringBuffer *)> guard(entry, MaaStringBufferDestroy);
+            MaaStatus status = MaaStatus_Invalid;
             MaaSize count = 0;
-            if (MaaTaskerGetTaskDetail(handle_, id, nullptr, nullptr, &count, nullptr) == 0 || count == 0) {
+            if (MaaTaskerGetTaskDetail(handle_, id, entry, nullptr, &count, &status) == 0 || count == 0) {
                 return {};
             }
             std::vector<MaaNodeId> ids(count);
             MaaSize want = count;
-            if (MaaTaskerGetTaskDetail(handle_, id, nullptr, ids.data(), &want, nullptr) == 0) {
+            if (MaaTaskerGetTaskDetail(handle_, id, entry, ids.data(), &want, &status) == 0) {
                 return {};
             }
             ids.resize(std::min<MaaSize>(want, count));
