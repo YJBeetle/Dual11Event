@@ -198,7 +198,8 @@ int main(int argc, char **argv) {
                     LOG_WARNING(
                         "main",
                         "%d back actions in a row changed nothing — this page ignores the whole escape ladder. "
-                        "Restarting from %s instead of spinning",
+                        "If the screen is asleep or locked, nothing you tap reaches anything: wake it, unlock, "
+                        "and set auto-lock longer before rerunning. Restarting from %s instead of spinning",
                         watch.idle_escapes(),
                         options.entry.c_str());
                     tasker.stop_and_wait();
