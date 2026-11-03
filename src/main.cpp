@@ -99,6 +99,7 @@ namespace {
     // 一层层往外退的嵌套页面本身就要花掉好几轮（一轮 = 一次盲点 + 一次边缘手势），
     // 所以这个阈值不能贴着「明显卡死」的下限，得留出退 8~10 层的余量。
     constexpr int kMaxEscapesWithoutProgress = 20;
+    constexpr int kStallSeconds = 90;
     const std::set<std::string> kProgressNodes = {
         "TaskRow", "TaskFinished", "ClaimReward", "OpenTaskPanel", "PanelDrained2",
     };
@@ -115,6 +116,9 @@ namespace {
     public:
         void poll(const Maa::Tasker &tasker, MaaTaskId task_id) {
             auto ids = tasker.node_ids(task_id);
+            if (ids.size() > cursor_) {
+                last_action_ = std::chrono::steady_clock::now();
+            }
             for (; cursor_ < ids.size(); ++cursor_) {
                 auto name = tasker.node_name(ids[cursor_]);
                 if (kProgressNodes.count(name)) {
@@ -130,8 +134,16 @@ namespace {
         bool stuck() const { return stuck_; }
         int idle_escapes() const { return idle_escapes_; }
 
+        // 手机自动锁屏是 5 分钟，而 iOS 的触摸事件唤不醒已经熄掉的屏：一旦这里静默
+        // 超过几分钟，整轮就等于挂在一块黑屏上（今天两次都是这样烧掉预算的）。
+        // 正常的 15 秒下滑和识别间隔都远小于这个阈值，只有真的卡住才会触发。
+        std::chrono::seconds stalled_for() const {
+            return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - last_action_);
+        }
+
     private:
         size_t cursor_ = 0;
+        std::chrono::steady_clock::time_point last_action_ = std::chrono::steady_clock::now();
         int idle_escapes_ = 0;
         bool stuck_ = false;
     };
@@ -194,6 +206,15 @@ int main(int argc, char **argv) {
                     return 3;
                 }
                 watch.poll(tasker, task_id);
+                if (watch.stalled_for() > std::chrono::seconds(kStallSeconds)) {
+                    LOG_FATAL(
+                        "main",
+                        "No pipeline action for %d s — the task is hung (most likely a blocked xdb call, "
+                        "or the screen fell asleep). Stopping so the next segment can start clean",
+                        static_cast<int>(watch.stalled_for().count()));
+                    tasker.stop_and_wait();
+                    return 4;
+                }
                 if (watch.stuck()) {
                     LOG_WARNING(
                         "main",

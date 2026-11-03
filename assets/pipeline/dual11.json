@@ -150,8 +150,21 @@
         "duration": 15000,
         "rate_limit": 300,
         "timeout": 10000,
-        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "OrderBait", "ExternalLinkAlert", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX", "TaskPage2"],
+        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "OrderBait", "ExternalLinkAlert", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX", "TaskPagePause"],
         "on_error": ["CornerBack", "GiveUp"]
+    },
+
+    // 两轮下滑之间的复查窗口。第一轮滑完的那一瞬间立刻识别一次，气泡常常还差一两秒
+    // 才翻成「已得」，于是被判成没完成、又压上第二轮 15 秒 —— 实测约三分之一的周期
+    // 需要第二轮，其中一部分本来就是这种"已经做完但还没显示出来"。
+    // 这里给 4 秒只看不滑：命中完成态或下单横幅就直接走，都没有才交给 TaskPage2。
+    "TaskPagePause": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "rate_limit": 500,
+        "timeout": 4000,
+        "next": ["TaskFinished", "OrderBait", "TaskPage2"],
+        "on_error": ["TaskPage2", "GiveUp"]
     },
 
     // 第二轮下滑。next 里不再挂自己，也不挂第三轮，所以一条任务的下滑时间被结构本身
