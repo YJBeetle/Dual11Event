@@ -20,7 +20,7 @@ namespace {
             << "  -s, --serial UDID    iOS device to drive (default: the only connected one)\n"
             << "  --xdb-port PORT      XDeviceBridge server port (default: XDB_PORT or 17423)\n"
             << "  --assets DIR         resource directory (default: ./assets)\n"
-            << "  --entry NAME         pipeline entry node (default: EarnEnergy)\n"
+            << "  --entry NAME         pipeline entry node (default: LaunchTaobao)\n"
             << "  --budget SECONDS     hard stop for one run (default: 3600)\n"
             << "  exit codes           0 drained, 1 budget/failed, 2 needs you, 3 device dropped\n"
             << "  -h, --help           show this help\n";
@@ -29,7 +29,7 @@ namespace {
     struct Options {
         std::string udid;
         std::string assets = "./assets";
-        std::string entry = "EarnEnergy";
+        std::string entry = "LaunchTaobao";
         int xdb_port = 0;
         int budget = 60 * 60;
     };

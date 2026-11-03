@@ -28,7 +28,7 @@
         "recognition": "DirectHit",
         "action": "DoNothing",
         "timeout": 15000,
-        "next": ["NeedHuman", "Blocked", "DangerPage", "ExternalLinkAlert", "DismissDialog", "LeaveDialog", "TaskPanel", "NoInstall", "OpenTaskPanel", "BackToTaobao", "CloseX", "CloseCircle", "GoMine", "CornerBack", "EdgeBack", "LaunchTaobao"],
+        "next": ["NeedHuman", "Blocked", "DangerPage", "ExternalLinkAlert", "DismissDialog", "LeaveDialog", "TaskPanel", "NoInstall", "OpenTaskPanel", "BackToTaobao", "CloseX", "ClosePopup", "GoMine", "CornerBack", "EdgeBack", "LaunchTaobao"],
         "on_error": ["GiveUp"]
     },
 
@@ -329,6 +329,22 @@
         "on_error": ["TaskPage", "GiveUp"]
     },
 
+    // 和 CloseCircle 认同一个模板，区别只在之后去哪：从活动页/首页认到的关闭键，
+    // 关掉之后应该回到分诊入口重新找面板；而 CloseCircle 是落地页链路里的，
+    // 关掉弹窗后还要继续读秒下滑。之前两者共用一个节点，实测在首页关掉一个弹窗后
+    // 被 next 里的 TaskPage 带走，白滑了两轮 30 秒。
+    "ClosePopup": {
+        "recognition": "TemplateMatch",
+        "template": "CloseCircle",
+        "threshold": 0.65,
+        "action": "Click",
+        "post_wait_freezes": 400,
+        "max_hit": 20,
+        "timeout": 6000,
+        "next": ["EarnEnergy"],
+        "on_error": ["EarnEnergy", "GiveUp"]
+    },
+
     // 离开别人的活动页（淘宝成就的打卡）会弹「真的要离开吗 / 狠心离开 / 继续做任务」。
     // 一律选离开：留在别人的签到链路里对我们没有任何意义，还会把整轮时间吃掉。
     "LeaveDialog": {
@@ -445,9 +461,12 @@
         "on_error": ["EarnEnergy", "GiveUp"]
     },
 
-    // 退出梯子的最后一级。bundle id 是从设备上 app.list 读出来的，不是猜的；
-    // iOS 的 start_app 收的就是 bundle id，且不杀已运行实例 —— 所以只有
-    // 「已经不在淘宝里」或「淘宝已经退到后台」时它才有用，页面卡住时它是空转。
+    // 默认入口（runner 的 --entry 就是它）。bundle id 是从设备上 app.list 读出来的，
+    // 不是猜的；iOS 的 start_app 收的是 bundle id，且不杀已运行实例，所以这一步
+    // 只是把淘宝拉到前台。为什么要把「开淘宝」放在最前面而不是留在梯子底部：
+    // 实测手机被留在京东 app 里时，梯子按 CornerBack → EdgeBack 的顺序降级，
+    // 两级额度都没用尽，最底下那条 StartApp 永远轮不到，白转 50 秒才被看门狗停掉。
+    // 先开淘宝再分诊，顺带也覆盖「淘宝已经退到后台/被划掉」的冷启动情况。
     "LaunchTaobao": {
         "recognition": "DirectHit",
         "action": "StartApp",
@@ -455,7 +474,7 @@
         "post_wait_freezes": { "time": 1500, "timeout": 4000, "target": [0, 0, 720, 1559] },
         // 冷启动淘宝要 5~8 秒才出画面，等太短会在白屏上判失败、把次数白白烧完。
         "post_delay": 6000,
-        "max_hit": 3,
+        "max_hit": 6,
         "timeout": 6000,
         "next": ["EarnEnergy"],
         "on_error": ["EarnEnergy", "GiveUp"]
