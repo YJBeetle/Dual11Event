@@ -20,7 +20,7 @@ namespace {
             << "  -s, --serial UDID    iOS device to drive (default: the only connected one)\n"
             << "  --xdb-port PORT      XDeviceBridge server port (default: XDB_PORT or 17423)\n"
             << "  --assets DIR         resource directory (default: ./assets)\n"
-            << "  --entry NAME         pipeline entry node (default: LaunchTaobao)\n"
+            << "  --entry NAME         pipeline entry node (default: KillTaobao)\n"
             << "  --budget SECONDS     hard stop for one run (default: 3600)\n"
             << "  exit codes           0 drained, 1 budget/failed, 2 needs you, 3 device dropped\n"
             << "  -h, --help           show this help\n";
@@ -29,7 +29,7 @@ namespace {
     struct Options {
         std::string udid;
         std::string assets = "./assets";
-        std::string entry = "LaunchTaobao";
+        std::string entry = "KillTaobao";
         int xdb_port = 0;
         int budget = 60 * 60;
     };
@@ -166,9 +166,11 @@ int main(int argc, char **argv) {
         // 治不了，但外面这一层可以 —— 重新 post 入口节点接着跑，墙钟预算才是唯一的总闸。
         constexpr int kMaxTaskAttempts = 10;
         bool timed_out = false;
+        bool gave_up_stuck = false;
         MaaStatus status = MaaStatus_Pending;
         for (int attempts = 1;; ++attempts) {
             ProgressWatch watch;
+            bool attempt_stuck = false;
             auto task_id = tasker.post_task(options.entry.c_str());
             if (task_id == 0) {
                 throw std::runtime_error("Failed to post task " + options.entry);
@@ -196,10 +198,12 @@ int main(int argc, char **argv) {
                     LOG_WARNING(
                         "main",
                         "%d back actions in a row changed nothing — this page ignores the whole escape ladder. "
-                        "Stopping instead of spinning",
-                        watch.idle_escapes());
+                        "Restarting from %s instead of spinning",
+                        watch.idle_escapes(),
+                        options.entry.c_str());
                     tasker.stop_and_wait();
-                    return 2;
+                    attempt_stuck = true;
+                    break;
                 }
                 status = tasker.status(task_id);
             }
@@ -208,11 +212,12 @@ int main(int argc, char **argv) {
             }
 
             status = tasker.wait(task_id);
-            if (status == MaaStatus_Succeeded) {
+            if (status == MaaStatus_Succeeded && !attempt_stuck) {
                 break;
             }
             if (attempts >= kMaxTaskAttempts) {
-                LOG_WARNING("main", "Still failing after %d attempts, giving up", attempts);
+                LOG_WARNING("main", "Still not making progress after %d attempts, giving up", attempts);
+                gave_up_stuck = attempt_stuck;
                 break;
             }
             LOG_WARNING(
@@ -227,6 +232,10 @@ int main(int argc, char **argv) {
         if (timed_out) {
             LOG_WARNING("main", "Stopped at the %d s budget with tasks possibly left", options.budget);
             return 1;
+        }
+        if (gave_up_stuck) {
+            LOG_WARNING("main", "Gave up: some page ignored every escape and restarting Taobao didn't clear it either. Handle it on the phone and run again");
+            return 2;
         }
         if (status != MaaStatus_Succeeded) {
             LOG_FATAL("main", "Task did not finish cleanly (status %d)", static_cast<int>(status));

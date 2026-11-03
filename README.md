@@ -125,7 +125,7 @@ MaaDeps 的 vcpkg 目录里、不在 install 树内。CMake 会按宿主平台�
 | `--xdb-port PORT` | xdb server 端口，默认读 `XDB_PORT`，再默认 17423 |
 | `--budget SECONDS` | 单次运行硬上限，默认 3600 秒（够跑空一整个面板），防止卡住一直点 |
 | `--assets DIR` | 资源目录，默认 `./assets` |
-| `--entry NAME` | 入口节点，默认 `LaunchTaobao`（先把淘宝拉到前台再分诊） |
+| `--entry NAME` | 入口节点，默认 `KillTaobao`（先杀掉再启动淘宝，从干净首页开始分诊） |
 
 退出码：0 = 面板里能自动做的都清空了；2 = 阶梯用完还是回不到活动页（或连续 20 次退出动作没换来任何进展）；3 = 手机侧隧道断了；1 = 预算到点或失败。
 日志写在 `debug/maa.log`，节点失败时的整屏截图在 `debug/on_error/`。
