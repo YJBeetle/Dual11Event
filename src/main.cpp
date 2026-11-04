@@ -126,6 +126,9 @@ namespace {
             }
             for (; cursor_ < ids.size(); ++cursor_) {
                 auto name = tasker.node_name(ids[cursor_]);
+                if (name == "GiveUp") {
+                    giveup_ = true;
+                }
                 if (name == "TaskRow") {
                     ++clicks_;
                 }
@@ -142,6 +145,10 @@ namespace {
             }
         }
 
+        // 收尾判定用这个而不是 MaaTaskerGetLatestNode("GiveUp")：那个 API 对没命中过的
+        // 名字会打一条 ERR，而"没命中过"恰恰是正常情况，等于每次成功收尾都要自己制造
+        // 一条假错误。节点序列本来就已经把名字读出来了。
+        bool giveup() const { return giveup_; }
         bool stuck() const { return stuck_; }
         int idle_escapes() const { return idle_escapes_; }
         int clicks_without_reward() const { return clicks_ - clicks_at_reward_; }
@@ -160,6 +167,7 @@ namespace {
         int idle_escapes_ = 0;
         int clicks_ = 0;
         int clicks_at_reward_ = 0;
+        bool giveup_ = false;
         bool stuck_ = false;
     };
 }
@@ -194,6 +202,7 @@ int main(int argc, char **argv) {
         constexpr int kMaxTaskAttempts = 10;
         bool timed_out = false;
         bool gave_up_stuck = false;
+        bool saw_giveup = false;
         MaaStatus status = MaaStatus_Pending;
         for (int attempts = 1;; ++attempts) {
             ProgressWatch watch;
@@ -259,6 +268,7 @@ int main(int argc, char **argv) {
             }
 
             status = tasker.wait(task_id);
+            saw_giveup = saw_giveup || watch.giveup();
             if (status == MaaStatus_Succeeded && !attempt_stuck) {
                 break;
             }
@@ -288,7 +298,7 @@ int main(int argc, char **argv) {
             LOG_FATAL("main", "Task did not finish cleanly (status %d)", static_cast<int>(status));
             return 1;
         }
-        if (tasker.hit("GiveUp")) {
+        if (saw_giveup) {
             LOG_WARNING("main", "Stopped early: either a choice that needs you (paint/team picker) or a page "
                                "the ladder cannot climb out of. Handle it on the phone and run again");
             return 2;

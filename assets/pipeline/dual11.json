@@ -92,7 +92,9 @@
         "begin": [360, 1300],
         "end": [360, 460],
         "duration": 450,
-        "post_wait_freezes": 400,
+        // inverse 命中意味着"什么都没匹配到"，也就没有识别框，所以 wait_freezes
+        // 必须显式给 target，否则每次判空都留一条 failed to get target rect 的 ERR。
+        "post_wait_freezes": { "time": 400, "timeout": 2000, "target": [0, 0, 720, 1559] },
         "timeout": 4000,
         "next": ["PanelDrained2"],
         "on_error": ["TaskPanel", "GiveUp"]
