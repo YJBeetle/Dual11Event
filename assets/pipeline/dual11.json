@@ -86,7 +86,7 @@
     // next 为空即任务正常结束。
     "PanelDrained": {
         "recognition": "OCR",
-        "expected": ["浏览\\d+", "点击去逛", "网络开小差", "点击刷新", "加载失败"],
+        "expected": ["浏览\\d+", "网络开小差", "点击刷新", "加载失败"],
         "inverse": true,
         "action": "Swipe",
         "begin": [360, 1300],
@@ -103,7 +103,7 @@
     // 所以第一段判定成立后先把列表往下滚一屏，再判一次，两次都没有才算清空。
     "PanelDrained2": {
         "recognition": "OCR",
-        "expected": ["浏览\\d+", "点击去逛", "网络开小差", "点击刷新", "加载失败"],
+        "expected": ["浏览\\d+", "网络开小差", "点击刷新", "加载失败"],
         "inverse": true,
         "action": "DoNothing",
         "timeout": 4000,
@@ -118,7 +118,11 @@
     // 不做「换一行」的轮转节点，改成随机选行，理由见下面的 order_by。
     "TaskRow": {
         "recognition": "OCR",
-        "expected": ["浏览\\d+[秒s]", "点击去逛"],
+        // 只认「浏览N秒」这一种副标题。「点击去逛」原来也在里面，但它分不出内外部：
+        // 面板里「头条刷热点领现金(0/1) 点击去逛+400」「来闪购逛逛领红包(0/1) 点击去逛+600」
+        // 副标题一模一样，前者点进去是跳出淘宝的外部页。按「微博之类的就不用点了」的要求,
+        // 这类归属不明确的行整个不做，只做有读秒气泡、下滑确实有意义的那些。
+        "expected": ["浏览\\d+[秒s]"],
         // 面板列表区：从 y=300 往下、左半屏（右半屏是「去完成」按钮列，靠偏移点）。
         // 顶部那条读秒气泡也写着「浏览15秒」，所以 y 起点必须留在它下面。
         "roi": [0, 300, 560, 0],
@@ -148,7 +152,7 @@
         "action": "DoNothing",
         "rate_limit": 800,
         "timeout": 8000,
-        "next": ["NoInstall", "DangerPage", "CloseCircle", "SearchSuggestion", "SearchDiscover", "OrderBait", "PageError", "TaskPage"],
+        "next": ["NoInstall", "DangerPage", "CloseCircle", "SearchSuggestion", "SearchDiscover", "OrderBait", "PageError", "ExternalHost", "TaskPage"],
         "on_error": ["TaskPage", "GiveUp"]
     },
 
@@ -168,7 +172,7 @@
         "duration": 15000,
         "rate_limit": 300,
         "timeout": 10000,
-        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "OrderBait", "ExternalLinkAlert", "PageError", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX", "TaskPagePause"],
+        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "OrderBait", "ExternalLinkAlert", "PageError", "ExternalHost", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX", "TaskPagePause"],
         "on_error": ["CornerBack", "GiveUp"]
     },
 
@@ -181,7 +185,7 @@
         "action": "DoNothing",
         "rate_limit": 500,
         "timeout": 4000,
-        "next": ["TaskFinished", "OrderBait", "PageError", "TaskPage2"],
+        "next": ["TaskFinished", "OrderBait", "PageError", "ExternalHost", "TaskPage2"],
         "on_error": ["TaskPage2", "GiveUp"]
     },
 
@@ -196,7 +200,7 @@
         "duration": 15000,
         "rate_limit": 300,
         "timeout": 10000,
-        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "OrderBait", "ExternalLinkAlert", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
+        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "OrderBait", "ExternalLinkAlert", "ExternalHost", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX"],
         "on_error": ["CornerBack", "GiveUp"]
     },
 
@@ -304,6 +308,22 @@
         "max_hit": 10,
         "timeout": 4000,
         "next": ["TaskPageEnter"],
+        "on_error": ["CornerBack", "GiveUp"]
+    },
+
+    // 落到别家 App 的页面：认出来就只退出，页面上什么都不点。
+    //
+    // 只挂在落地页链路（TaskPageEnter / TaskPage / TaskPage2 / 复查窗口）里，
+    // 而且必须排在 TaskPanel 之后：面板里本来就有一行叫「头条刷热点领现金」，
+    // 挂进分诊入口（EarnEnergy）或者排在 TaskPanel 前面，就会把面板当成外部页退掉 ——
+    // 上一版 NoInstall 收「快手 / 抖音」时踩过同样的坑。
+    "ExternalHost": {
+        "recognition": "OCR",
+        "expected": ["今日头条", "头条", "微博", "百度", "快手", "抖音", "小红书", "哔哩哔哩", "支付宝"],
+        "action": "DoNothing",
+        "max_hit": 20,
+        "timeout": 4000,
+        "next": ["CornerBack"],
         "on_error": ["CornerBack", "GiveUp"]
     },
 
