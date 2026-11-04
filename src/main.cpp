@@ -100,6 +100,11 @@ namespace {
     // 所以这个阈值不能贴着「明显卡死」的下限，得留出退 8~10 层的余量。
     constexpr int kMaxEscapesWithoutProgress = 20;
     constexpr int kStallSeconds = 90;
+    // 点了很多次、一次都没到账，就说明剩下的行全是"看着能做其实不该做"的那类
+    // （下单返能量 / 外部 App / 邀请 / 积分兑换）。这时候继续跑只会把预算耗光：
+    // 面板按副标题判断"还有没有行"，而这些行的副标题确实写着「浏览N秒」，
+    // 所以 PanelDrained 永远不会成立，不主动收口就是每段 30 分钟空转。
+    constexpr int kMaxClicksWithoutReward = 15;
     const std::set<std::string> kProgressNodes = {
         "TaskRow", "TaskFinished", "ClaimReward", "OpenTaskPanel", "PanelDrained2",
     };
@@ -121,6 +126,12 @@ namespace {
             }
             for (; cursor_ < ids.size(); ++cursor_) {
                 auto name = tasker.node_name(ids[cursor_]);
+                if (name == "TaskRow") {
+                    ++clicks_;
+                }
+                else if (name == "TaskFinished" || name == "ClaimReward") {
+                    clicks_at_reward_ = clicks_;
+                }
                 if (kProgressNodes.count(name)) {
                     idle_escapes_ = 0;
                 }
@@ -133,6 +144,8 @@ namespace {
 
         bool stuck() const { return stuck_; }
         int idle_escapes() const { return idle_escapes_; }
+        int clicks_without_reward() const { return clicks_ - clicks_at_reward_; }
+        bool nothing_left_to_do() const { return clicks_without_reward() >= kMaxClicksWithoutReward; }
 
         // 手机自动锁屏是 5 分钟，而 iOS 的触摸事件唤不醒已经熄掉的屏：一旦这里静默
         // 超过几分钟，整轮就等于挂在一块黑屏上（今天两次都是这样烧掉预算的）。
@@ -145,6 +158,8 @@ namespace {
         size_t cursor_ = 0;
         std::chrono::steady_clock::time_point last_action_ = std::chrono::steady_clock::now();
         int idle_escapes_ = 0;
+        int clicks_ = 0;
+        int clicks_at_reward_ = 0;
         bool stuck_ = false;
     };
 }
@@ -214,6 +229,16 @@ int main(int argc, char **argv) {
                         static_cast<int>(watch.stalled_for().count()));
                     tasker.stop_and_wait();
                     return 4;
+                }
+                if (watch.nothing_left_to_do()) {
+                    LOG_WARNING(
+                        "main",
+                        "%d rows clicked since the last reward — whatever is left in the panel is "
+                        "order-reward bait, another company's app, an invite or a points exchange. "
+                        "Nothing here is doable automatically, so stopping",
+                        watch.clicks_without_reward());
+                    tasker.stop_and_wait();
+                    return 0;
                 }
                 if (watch.stuck()) {
                     LOG_WARNING(
