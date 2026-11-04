@@ -147,12 +147,15 @@
     // 进落地页先只看不滑。TaskPage 一上来就是一记 15 秒全长下滑，而搜索类页面要点的
     // 「搜索发现」标题就在屏幕中上部，一记下滑就把它推出屏幕，节点再也认不到，
     // 于是变成「没点任何东西却一直在滑」。这里给 8 秒先把入口点了，再交给下滑轮次。
+    //
+    // 入口链里也要查一次完成态：有些行点进去已经是「任务已完成 / 已得N」了
+    // （同一条任务今天做过、或者页面自己记着进度），不查就得先白滑 15 秒才发现。
     "TaskPageEnter": {
         "recognition": "DirectHit",
         "action": "DoNothing",
         "rate_limit": 800,
         "timeout": 8000,
-        "next": ["NoInstall", "DangerPage", "CloseCircle", "SearchSuggestion", "SearchDiscover", "OrderBait", "PageError", "ExternalHost", "TaskPage"],
+        "next": ["NoInstall", "DangerPage", "CloseCircle", "TaskFinished", "SearchSuggestion", "SearchDiscover", "OrderBait", "PageError", "ExternalHost", "TaskPage"],
         "on_error": ["TaskPage", "GiveUp"]
     },
 
