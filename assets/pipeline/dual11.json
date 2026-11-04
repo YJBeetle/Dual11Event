@@ -49,7 +49,7 @@
         "action": "DoNothing",
         "pre_wait_freezes": 300,
         "timeout": 15000,
-        "next": ["ClaimReward", "TaskRow", "PanelDrained"],
+        "next": ["ClaimReward", "TaskRow", "PanelError", "PanelDrained"],
         "on_error": ["EarnEnergy", "GiveUp"]
     },
 
@@ -64,16 +64,34 @@
         "on_error": ["TaskPanel", "GiveUp"]
     },
 
+    // 面板是个 H5，网络抖一下就会把整个任务列表换成「网络开小差了，刷新试试吧」+
+    // 「点击刷新」。这必须单独认出来：错误态里既没有「浏览N秒」也没有「点击去逛」，
+    // 于是上一版把「列表没加载出来」判成「任务都做完了」，还以 Task succeeded 收工
+    // —— 实测进度停在 46/50，面板里其实还摆着 4 条能做的行。
+    // 处理方式是点它自己的重试按钮，最多试 12 次；真的一直失败就让它落进
+    // 非成功退出（PanelDrained 因为下面加了错误文案也不会误判成清空）。
+    "PanelError": {
+        "recognition": "OCR",
+        "expected": ["网络开小差", "点击刷新", "加载失败", "刷新试试", "网络异常"],
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "post_delay": 2500,
+        "max_hit": 12,
+        "timeout": 5000,
+        "next": ["TaskPanel"],
+        "on_error": ["TaskPanel", "GiveUp"]
+    },
+
     // 面板上再也找不到「浏览N秒」的副标题，说明能自动做的浏览任务清空了。
     // next 为空即任务正常结束。
     "PanelDrained": {
         "recognition": "OCR",
-        "expected": ["浏览\\d+", "点击去逛"],
+        "expected": ["浏览\\d+", "点击去逛", "网络开小差", "点击刷新", "加载失败"],
         "inverse": true,
         "action": "Swipe",
-        "begin": [360, 1250],
-        "end": [360, 900],
-        "duration": 400,
+        "begin": [360, 1300],
+        "end": [360, 460],
+        "duration": 450,
         "post_wait_freezes": 400,
         "timeout": 4000,
         "next": ["PanelDrained2"],
@@ -85,7 +103,7 @@
     // 所以第一段判定成立后先把列表往下滚一屏，再判一次，两次都没有才算清空。
     "PanelDrained2": {
         "recognition": "OCR",
-        "expected": ["浏览\\d+", "点击去逛"],
+        "expected": ["浏览\\d+", "点击去逛", "网络开小差", "点击刷新", "加载失败"],
         "inverse": true,
         "action": "DoNothing",
         "timeout": 4000,
@@ -130,7 +148,7 @@
         "action": "DoNothing",
         "rate_limit": 800,
         "timeout": 8000,
-        "next": ["NoInstall", "DangerPage", "CloseCircle", "SearchSuggestion", "SearchDiscover", "OrderBait", "TaskPage"],
+        "next": ["NoInstall", "DangerPage", "CloseCircle", "SearchSuggestion", "SearchDiscover", "OrderBait", "PageError", "TaskPage"],
         "on_error": ["TaskPage", "GiveUp"]
     },
 
@@ -150,7 +168,7 @@
         "duration": 15000,
         "rate_limit": 300,
         "timeout": 10000,
-        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "OrderBait", "ExternalLinkAlert", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX", "TaskPagePause"],
+        "next": ["NeedHuman", "DangerPage", "TaskPanel", "NoInstall", "TaskFinished", "OrderBait", "ExternalLinkAlert", "PageError", "DismissDialog", "CloseCircle", "SearchSuggestion", "SearchDiscover", "SignIn", "CloseX", "TaskPagePause"],
         "on_error": ["CornerBack", "GiveUp"]
     },
 
@@ -163,7 +181,7 @@
         "action": "DoNothing",
         "rate_limit": 500,
         "timeout": 4000,
-        "next": ["TaskFinished", "OrderBait", "TaskPage2"],
+        "next": ["TaskFinished", "OrderBait", "PageError", "TaskPage2"],
         "on_error": ["TaskPage2", "GiveUp"]
     },
 
@@ -266,6 +284,26 @@
         "max_hit": 30,
         "timeout": 4000,
         "next": ["CornerBack"],
+        "on_error": ["CornerBack", "GiveUp"]
+    },
+
+    // 落地页本身也会挂：实测手机网络到不了活动页时，点进去是一整页静态错误页
+    // 「系统出了点问题 / 目标地址不可达」，下面并排「问题反馈」「刷新页面」。
+    // 这种页没有读秒气泡，滑多久都不会有结果 —— 实测三帧截图字节完全一样，
+    // 页面根本不动，而流水线照样把两轮 15 秒滑满才退出去。
+    //
+    // 只认按钮文字（不认「系统出了点问题」）：命中框就是要点的目标，
+    // 认标题的话会点到一行标题文字上。刷新后回到 TaskPageEnter 重新看这一页；
+    // 网络一直不通就靠 max_hit 收口，掉进退出梯子。
+    "PageError": {
+        "recognition": "OCR",
+        "expected": ["刷新页面", "重新加载", "点击重试"],
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "post_delay": 3000,
+        "max_hit": 10,
+        "timeout": 4000,
+        "next": ["TaskPageEnter"],
         "on_error": ["CornerBack", "GiveUp"]
     },
 
