@@ -224,7 +224,27 @@
         "expected": ["已得\\d+", "任务已完成"],
         "action": "DoNothing",
         "timeout": 8000,
-        "next": ["TaskPanel", "CornerBack"],
+        "next": ["NextTask", "TaskPanel", "CornerBack"],
+        "on_error": ["CornerBack", "GiveUp"]
+    },
+
+    // 商品瀑布流任务页左下角有个「下个任务」，点它直接换到下一条任务，省掉
+    // 「返回 → 面板翻页 → 重新找行」这一整圈（实测一圈 30 秒以上）。
+    // 必须和「已得N」同时出现才点：单独看到按钮时说明本条还没读满，跳走就白刷。
+    // And 的两个子识别各自在全图找，box_index=1 取「下个任务」那一框。
+    "NextTask": {
+        "recognition": "And",
+        "all_of": [
+            { "recognition": "OCR", "expected": ["已得\\d+", "任务已完成"] },
+            { "recognition": "OCR", "expected": ["下个任务"] }
+        ],
+        "box_index": 1,
+        "action": "Click",
+        "post_wait_freezes": 500,
+        "post_delay": 1500,
+        "max_hit": 40,
+        "timeout": 8000,
+        "next": ["TaskPageEnter"],
         "on_error": ["CornerBack", "GiveUp"]
     },
 
